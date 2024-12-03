@@ -1,1 +1,1 @@
-# iGEM_ULaval_2025
+# iGEM ULaval 2025
