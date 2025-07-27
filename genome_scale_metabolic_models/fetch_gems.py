@@ -2,7 +2,7 @@ import requests
 from typing import List, Optional
 from pathlib import Path
 
-def fetch_models_based_on_org(url:str, outdir:[Path]=None, organisms:Optional[List[str]]=None) -> None:
+def fetch_models_based_on_org(url:str, outdir:Optional[Path]=None, organisms:Optional[List[str]]=None) -> None:
     """ 
     Fetch GEModels from the given database (URL)
 
@@ -14,22 +14,33 @@ def fetch_models_based_on_org(url:str, outdir:[Path]=None, organisms:Optional[Li
     # Template URL for model download given from BIGG MODELS
     DOWNLOAD_URL_TEMPLATE = 'http://bigg.ucsd.edu/api/v2/models/MODEL_ID/download'
      
-    outdir = Path(outdir)
+    outdir = Path(outdir or "./models")
     outdir.mkdir(parents=True, exist_ok=True)
-    
-    response = make_request(url=url)
+
+    response = make_request(url)
     if not response:
+        print("Failed to retrieve model list.")
         return
 
     models = response.json().get("results", [])
+    if not models:
+        print("No models found in the response.")
+        return
 
     # Filter for specific organisms if any
-    selected_models = [m for m in models if any([org.lower() in m["organism"].lower() for org in organisms])] if organisms else models
+    selected_models = [m for m in models if any(org.lower() in m["organism"].lower() for org in organisms)] if organisms else models
     
+    if not selected_models:
+        print("No models matched the specified organisms.")
+        return
+
+    info = []
+
     for model in selected_models:
         model_id = model['bigg_id']
         organism = model['organism']
         download_url = DOWNLOAD_URL_TEMPLATE.replace('MODEL_ID', model_id)
+        file_path = outdir / f"{model_id}.json"
 
         print(f"Downloading model: {model_id} ({organism})")
 
@@ -37,14 +48,20 @@ def fetch_models_based_on_org(url:str, outdir:[Path]=None, organisms:Optional[Li
             req = requests.get(download_url)
             req.raise_for_status()
             
-            file_path = outdir / f"{model_id}.json"
             with open(file_path, "wb") as f: f.write(req.content)
             print(f"Saved: {file_path}")
 
-            
+            info.append((model_id,organism))
+            break
         except requests.exceptions.RequestException as e:
             print(f"Failed to download {model_id}: {e}")
 
+    description_file = "models_description.txt"
+    with open(outdir / description_file, 'w') as f:
+        for model_id, org in info:
+            f.write(f'{model_id} -> {org}\n')
+
+    print(f'Successfully written {description_file}')
 def get_organisms_choice(url:str, organisms:Optional[List[str]]=None, simplified:bool=True) -> Optional[List[str]]:
     """ 
     Get available organism names from the given URL.
