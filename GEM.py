@@ -1,17 +1,31 @@
 import cobra    # Pour l'analyse du métabolisme
+from cobra.flux_analysis import flux_variability_analysis as pfba
+
 import pandas as pd
 import numpy as np  # Pour les calculs scientifiques
-from cobra.flux_analysis import flux_variability_analysis as fva, pfba
 import warnings
+from pathlib import Path
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# 1) Définition des modèles utilisés
+# Step 1: Assert model use are present in the directory
+curr_loc = Path(__file__)
+models_loc = Path('models')
+curr_loc.mkdir(models_loc, exist_ok=True) 
+
+if models_loc.is_dir() and not any(models_loc.iterdir()):
+    # Fetch models if needed
+    
+    pass
+models = {m.stem: m for m in models_loc.iterdir()}
+
+"""
 models = {
     "iML1515": "C:/Users/aliso/OneDrive - Université Laval/iGEM_E.coli/iML1515.json",
     "iAF1260" : "C:/Users/aliso/OneDrive - Université Laval/iGEM_E.coli/iAF1260.json",
     "iJO1366" : "C:/Users/aliso/OneDrive - Université Laval/iGEM_E.coli/iJO1366.json"
 }
+"""
 
 # 2) Paramètres environnementaux
 ph_levels = [
