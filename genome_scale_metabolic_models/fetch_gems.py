@@ -25,6 +25,7 @@ def fetch_models_based_on_org(url:str, outdir:[Path]=None, organisms:Optional[Li
 
     # Filter for specific organisms if any
     selected_models = [m for m in models if any([org.lower() in m["organism"].lower() for org in organisms])] if organisms else models
+    
     for model in selected_models:
         model_id = model['bigg_id']
         organism = model['organism']
@@ -36,11 +37,11 @@ def fetch_models_based_on_org(url:str, outdir:[Path]=None, organisms:Optional[Li
             req = requests.get(download_url)
             req.raise_for_status()
             
-            if outdir:
-                file_path = outdir / f"{model_id}.json"
-                with open(file_path, "wb") as f:
-                    f.write(req.content)
-                print(f"Saved: {file_path}")
+            file_path = outdir / f"{model_id}.json"
+            with open(file_path, "wb") as f: f.write(req.content)
+            print(f"Saved: {file_path}")
+
+            
         except requests.exceptions.RequestException as e:
             print(f"Failed to download {model_id}: {e}")
 
