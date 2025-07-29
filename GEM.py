@@ -6,6 +6,8 @@ import numpy as np  # Pour les calculs scientifiques
 import warnings
 from pathlib import Path
 
+# 1) Importer la fonction de fetch
+from import_GEMmodels import fetch_models
 
 
 warnings.filterwarnings("ignore", category=UserWarning)
