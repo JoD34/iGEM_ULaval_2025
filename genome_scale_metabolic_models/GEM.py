@@ -142,7 +142,7 @@ def optimize_citrate(m, bio_rxn) -> tuple:
     sol = m.optimize()
     if sol.status != "optimal":
         return None
-    return sol.fluxes["EX_cit_e"], pfba(m).fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
+    return sol.fluxes["EX_cit_e"], pfba(m, processes=1).fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
 
 
 def optimize_growth(m, bio_rxn) -> float:
@@ -175,7 +175,7 @@ def optimize_siderophore(m) -> tuple:
     m.objective = sider_id
     sol = m.optimize()
     if sol.status == "optimal":
-        return sol.fluxes[sider_id], pfba(m).fluxes[sider_id]
+        return sol.fluxes[sider_id], pfba(m, processes=1).fluxes[sider_id]
     return np.nan, np.nan
 
 
