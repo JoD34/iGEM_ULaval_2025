@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np  # Pour les calculs scientifiques
 import warnings
 from pathlib import Path
+from fetch_gems import fetch_models_based_on_org
 
 
 
