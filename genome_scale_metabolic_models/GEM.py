@@ -251,24 +251,39 @@ def save_results(results: list, output: Path):
 
 
 def main():
+    """
+    Point d'entrée principal :
+    - Vérifie/télécharge les modèles
+    - Génère le plan d'expériences
+    - Exécute les simulations en parallèle
+    - Sauvegarde et affiche les résultats
+    """
     # Step 1: Assert models présents
-        models_loc = Path('models')
+    models_loc = Path('models')
     models_loc.mkdir(exist_ok=True)
 
     if models_loc.is_dir() and not any(models_loc.iterdir()):
+        # Si vide, on fetch tous les modèles depuis BIGG
         url = "http://bigg.ucsd.edu/api/v2/models"
         fetch_models_based_on_org(url=url, outdir=str(models_loc), organism=["coli"])
     models = {m.stem: m for m in models_loc.iterdir()}
 
+    # Step 2: Prépare le plan d'expériences
     ion_params = flatten_ion_buffers(ION_BUFFERS)
-    param_grid = generate_param_grid(models, CARBON_SOURCES, PH_LEVELS,
-                                     ion_params, TEMP_LEVELS,
-                                     GROWTH_FRACS, KOS)
+    param_grid = generate_param_grid(models,
+                                     CARBON_SOURCES,
+                                     PH_LEVELS,
+                                     ion_params,
+                                     TEMP_LEVELS,
+                                     GROWTH_FRACS,
+                                     KOS)
 
+    # Step 3: Exécution parallèle des simulations
     with Pool() as pool:
         results = pool.map(run_simulation, param_grid)
     results = [r for r in results if r]
 
+    # Step 4: Sauvegarde et résumé
     save_results(results, CSV_OUTPUT)
 
 
