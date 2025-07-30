@@ -42,9 +42,9 @@ def flatten_ion_buffers(buffers: dict) -> list:
     Aplatie la structure ION_BUFFERS en une liste de tuples (ion, rxn_id, buf_lb).
 
     Args:
-       buffers (dict): map ion -> (rxn_id, liste de bornes)
+        buffers (dict): map ion -> (rxn_id, liste de bornes)
     Returns:
-       list of tuples: [(ion, reaction_id, buffer_lower_bound), ...]
+        list of tuples: [(ion, reaction_id, buffer_lower_bound), ...]
     """
     return [
         (ion, rxn_id, buf_lb)
@@ -53,7 +53,9 @@ def flatten_ion_buffers(buffers: dict) -> list:
     ]
 
 
-def generate_param_grid(models, carb_sources, ph_levels, ion_params, temp_levels, growth_fracs, kos):
+def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
+                        ion_params: list, temp_levels: list,
+                        growth_fracs: list, kos: list):
     """
     Génère un itérateur cartésien de toutes les combinaisons de paramètres.
 
@@ -79,7 +81,8 @@ def generate_param_grid(models, carb_sources, ph_levels, ion_params, temp_levels
     )
 
 
-def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT):
+def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
+                    temp_fact, ko, bio_rxn, WT, frac):
     """
     Applique les contraintes expérimentales sur le modèle COBRApy cloné.
 
@@ -94,10 +97,11 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT
         bio_rxn (str): id de la réaction de biomass
         WT (float): flux de biomass en condition WT
     """
-    # Carbone
+    # Désactive toutes les sources de carbone
     for exch in CARBON_SOURCES.values():
         if exch in m.reactions:
             m.reactions.get_by_id(exch).lower_bound = 0.0
+    # Active la source sélectionnée
     if c_exch in m.reactions:
         m.reactions.get_by_id(c_exch).lower_bound = -10.0
     # pH
@@ -115,16 +119,16 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT
     # knock-out
     if ko and ko in m.reactions:
         m.reactions.get_by_id(ko).knock_out()
-    # contrainte de croissance min
-    if frac > 0:
+    # croissance minimale (si besoin)
+    if WT and bio_rxn:
         cons = m.solver.interface.Constraint(
             m.reactions.get_by_id(bio_rxn).flux_expression,
-            lb=frac * WT, ub=1e6, name="min_growth"
+            lb=0, ub=1e6, name="min_growth"
         )
         m.add_cons_vars(cons)
 
 
-def optimize_citrate(m, bio_rxn):
+def optimize_citrate(m, bio_rxn) -> tuple:
     """
     Optimise l'export de citrate et renvoie ses flux.
 
@@ -138,13 +142,10 @@ def optimize_citrate(m, bio_rxn):
     sol = m.optimize()
     if sol.status != "optimal":
         return None
-    cit_fba = sol.fluxes["EX_cit_e"]
-    cit_pfb = pfba(m).fluxes["EX_cit_e"]
-    gr_cit = sol.fluxes[bio_rxn]
-    return cit_fba, cit_pfb, gr_cit
+    return sol.fluxes["EX_cit_e"], pfba(m).fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
 
 
-def optimize_growth(m, bio_rxn):
+def optimize_growth(m, bio_rxn) -> float:
     """
     Optimise la croissance maximale (biomass objective).
 
@@ -161,7 +162,7 @@ def optimize_growth(m, bio_rxn):
     return sol.objective_value
 
 
-def optimize_siderophore(m):
+def optimize_siderophore(m) -> tuple:
     """
     Optimise l'export du sidérophore et renvoie ses flux.
 
@@ -196,21 +197,16 @@ def run_simulation(params) -> dict:
     base.reactions.EX_cit_e.lower_bound = -1000
 
     with base as m:
-        # Appliquer les contraintes
-        configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT)
-
-        # Citrate
+        configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT, frac)
         cit = optimize_citrate(m, bio_rxn)
         if cit is None:
             return None
         cit_fba, cit_pfb, gr_cit = cit
 
-        # Croissance
         growth_max = optimize_growth(m, bio_rxn)
         if growth_max is None:
             return None
 
-        # Sidérophore
         sid_fba, sid_pfb = optimize_siderophore(m)
 
     return {
@@ -223,7 +219,7 @@ def run_simulation(params) -> dict:
         'growth_%': int(frac * 100),
         'KO': ko or 'none',
         'citrate_FBA': round(cit_fba, 4),
-        'citrate_pFBA': round(cit_pfb, 4),
+        'citrine_pFBA': round(cit_pfb, 4),
         'growth_under_cit': round(gr_cit, 4),
         'growth_max': round(growth_max, 4),
         'siderophore_FBA': round(sid_fba, 4),
