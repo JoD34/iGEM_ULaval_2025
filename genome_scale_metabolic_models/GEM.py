@@ -39,7 +39,12 @@ CSV_OUTPUT = Path('citrate_growth_siderophore_scan.csv')
 # -- Fonctions utilitaires --
 def flatten_ion_buffers(buffers: dict) -> list:
     """
-    Aplatie ION_BUFFERS en une liste de tuples (ion, rxn_id, buf_lb).
+    Aplatie la structure ION_BUFFERS en une liste de tuples (ion, rxn_id, buf_lb).
+
+    Args:
+       buffers (dict): map ion -> (rxn_id, liste de bornes)
+    Returns:
+       list of tuples: [(ion, reaction_id, buffer_lower_bound), ...]
     """
     return [
         (ion, rxn_id, buf_lb)
@@ -50,7 +55,18 @@ def flatten_ion_buffers(buffers: dict) -> list:
 
 def generate_param_grid(models, carb_sources, ph_levels, ion_params, temp_levels, growth_fracs, kos):
     """
-    Génère un itérateur de toutes les combinaisons de paramètres.
+    Génère un itérateur cartésien de toutes les combinaisons de paramètres.
+
+    Args:
+        models (dict): map model_name -> Path du modèle JSON
+        carb_sources (dict): map nom_source -> id de réaction
+        ph_levels (list): liste de tuples (pH_lb, étiquette)
+        ion_params (list): liste de tuples (ion, reaction_id, buffer_lb)
+        temp_levels (list): liste de tuples (facteur_temp, étiquette)
+        growth_fracs (list): fractions de croissance minimale
+        kos (list): knock-outs possibles ou None
+    Returns:
+        Iterator: itertools.product générant un tuple complet par combinaison
     """
     return product(
         models.items(),
@@ -65,7 +81,18 @@ def generate_param_grid(models, carb_sources, ph_levels, ion_params, temp_levels
 
 def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT):
     """
-    Applique les contraintes de carbone, pH, tampon ionique, température et KO sur le modèle.
+    Applique les contraintes expérimentales sur le modèle COBRApy cloné.
+
+    Args:
+        m: modèle COBRApy (contexte `with base as m`)
+        c_exch (str): id de la réaction de carbone à activer
+        ph_lb (float): borne inférieure pour la réaction EX_h_e
+        rxn_id (str): id de la réaction tampon ionique
+        buf_lb (float): borne inférieure pour la réaction tampon
+        temp_fact (float): facteur multiplicatif appliqué aux réactions sensibles
+        ko (str|None): id de réaction à KO, ou None
+        bio_rxn (str): id de la réaction de biomass
+        WT (float): flux de biomass en condition WT
     """
     # Carbone
     for exch in CARBON_SOURCES.values():
@@ -99,7 +126,13 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT
 
 def optimize_citrate(m, bio_rxn):
     """
-    Optimise l'export citrate et renvoie (cit_fba, cit_pfb, gr_cit).
+    Optimise l'export de citrate et renvoie ses flux.
+
+    Args:
+        m: modèle COBRApy
+        bio_rxn: id de la réaction de biomass
+    Returns:
+        (flux_FBA, flux_pFBA, flux_biomass_durant_export) ou None
     """
     m.objective = "EX_cit_e"
     sol = m.optimize()
@@ -113,7 +146,13 @@ def optimize_citrate(m, bio_rxn):
 
 def optimize_growth(m, bio_rxn):
     """
-    Optimise la croissance maximale et renvoie growth_max.
+    Optimise la croissance maximale (biomass objective).
+
+    Args:
+        m: modèle COBRApy
+        bio_rxn: id de la réaction de biomass
+    Returns:
+        growth_max (float) ou None
     """
     m.objective = bio_rxn
     sol = m.optimize()
@@ -124,7 +163,12 @@ def optimize_growth(m, bio_rxn):
 
 def optimize_siderophore(m):
     """
-    Optimise l'export de sidérophore et renvoie (sid_fba, sid_pfb).
+    Optimise l'export du sidérophore et renvoie ses flux.
+
+    Args:
+        m: modèle COBRApy
+    Returns:
+        (flux_FBA, flux_pFBA)
     """
     sider_id = "EX_feenter_e"
     m.objective = sider_id
@@ -136,8 +180,12 @@ def optimize_siderophore(m):
 
 def run_simulation(params) -> dict:
     """
-    Exécute une simulation pour un jeu de paramètres donné en appelant les sous-fonctions.
-    Retourne un dict de résultats ou None si un step échoue.
+    Exécute une simulation complète pour un jeu de paramètres.
+
+    Args:
+        params: tuple fourni par generate_param_grid
+    Returns:
+        dict des résultats ou None si échec d'une étape
     """
     (model_name, path), (c_name, c_exch), (ph_lb, ph_lbl), \
         (ion, rxn_id, buf_lb), (temp_fact, temp_lbl), frac, ko = params
@@ -186,6 +234,10 @@ def run_simulation(params) -> dict:
 def save_results(results: list, output: Path):
     """
     Sauvegarde les résultats dans un CSV et affiche un résumé.
+
+    Args:
+        results (list): liste de dicts de résultats
+        output (Path): chemin vers le CSV de sortie
     """
     df = pd.DataFrame(results)
     df.to_csv(output, index=False)
