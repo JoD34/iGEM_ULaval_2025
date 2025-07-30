@@ -251,19 +251,19 @@ def save_results(results: list, output: Path):
 
 
 def main():
-    # Step 1: Assert model use are present in the directory
-    curr_loc = Path(__file__)
-    models_loc = Path('models')
-    curr_loc.mkdir(models_loc, exist_ok=True)
+    # Step 1: Assert models présents
+        models_loc = Path('models')
+    models_loc.mkdir(exist_ok=True)
 
     if models_loc.is_dir() and not any(models_loc.iterdir()):
-        # Si vide, on fetch tous les modèles depuis BIGG
         url = "http://bigg.ucsd.edu/api/v2/models"
         fetch_models_based_on_org(url=url, outdir=str(models_loc), organism=["coli"])
     models = {m.stem: m for m in models_loc.iterdir()}
 
     ion_params = flatten_ion_buffers(ION_BUFFERS)
-    param_grid = generate_param_grid(models, CARBON_SOURCES, PH_LEVELS, ion_params, TEMP_LEVELS, GROWTH_FRACS, KOS)
+    param_grid = generate_param_grid(models, CARBON_SOURCES, PH_LEVELS,
+                                     ion_params, TEMP_LEVELS,
+                                     GROWTH_FRACS, KOS)
 
     with Pool() as pool:
         results = pool.map(run_simulation, param_grid)
