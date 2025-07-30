@@ -6,7 +6,7 @@ import numpy as np  # Pour les calculs scientifiques
 import warnings
 from pathlib import Path
 from fetch_gems import fetch_models_based_on_org
-
+from itertools import product
 
 
 warnings.filterwarnings("ignore", category=UserWarning)
