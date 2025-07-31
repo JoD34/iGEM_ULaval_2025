@@ -1,6 +1,5 @@
 import cobra    # Pour l'analyse du métabolisme
-from cobra.flux_analysis import flux_variability_analysis as pfba
-
+from cobra.flux_analysis import pfba
 import pandas as pd
 import numpy as np  # Pour les calculs scientifiques
 import warnings
@@ -127,6 +126,15 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
         )
         m.add_cons_vars(cons)
 
+def optimize_growth(m, bio_rxn) -> float:
+    """
+    Optimise la croissance maximale (biomass objective).
+    """
+    m.objective = bio_rxn
+    sol = m.optimize()
+    if sol.status != "optimal":
+        return None
+    return sol.objective_value
 
 def optimize_citrate(m, bio_rxn) -> tuple:
     """
@@ -142,24 +150,8 @@ def optimize_citrate(m, bio_rxn) -> tuple:
     sol = m.optimize()
     if sol.status != "optimal":
         return None
-    return sol.fluxes["EX_cit_e"], pfba(m, processes=1).fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
-
-
-def optimize_growth(m, bio_rxn) -> float:
-    """
-    Optimise la croissance maximale (biomass objective).
-
-    Args:
-        m: modèle COBRApy
-        bio_rxn: id de la réaction de biomass
-    Returns:
-        growth_max (float) ou None
-    """
-    m.objective = bio_rxn
-    sol = m.optimize()
-    if sol.status != "optimal":
-        return None
-    return sol.objective_value
+    pfba_fluxes = pfba(m)
+    return sol.fluxes["EX_cit_e"], pfba_fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
 
 
 def optimize_siderophore(m) -> tuple:
@@ -172,11 +164,16 @@ def optimize_siderophore(m) -> tuple:
         (flux_FBA, flux_pFBA)
     """
     sider_id = "EX_feenter_e"
+    if sider_id not in m.reactions:
+        return np.nan, np.nan
+
     m.objective = sider_id
     sol = m.optimize()
-    if sol.status == "optimal":
-        return sol.fluxes[sider_id], pfba(m, processes=1).fluxes[sider_id]
-    return np.nan, np.nan
+    if sol.status != "optimal":
+        return np.nan, np.nan
+
+    pfba_fluxes = pfba(m)
+    return sol.fluxes[sider_id], pfba_fluxes[sider_id]
 
 
 def run_simulation(params) -> dict:
@@ -261,7 +258,7 @@ def main():
     if models_loc.is_dir() and not any(models_loc.iterdir()):
         # Si vide, on fetch tous les modèles depuis BIGG
         url = "http://bigg.ucsd.edu/api/v2/models"
-        fetch_models_based_on_org(url=url, outdir=str(models_loc), organism=["coli"])
+        fetch_models_based_on_org(url=url, outdir=str(models_loc))
     models = {m.stem: m for m in models_loc.iterdir()}
 
     # Step 2: Prépare le plan d'expériences
