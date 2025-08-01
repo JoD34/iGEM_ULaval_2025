@@ -1,5 +1,6 @@
+import os
 import cobra    # Pour l'analyse du métabolisme
-from cobra.flux_analysis import flux_variability_analysis as pfba
+from cobra.flux_analysis import pfba
 
 import pandas as pd
 import numpy as np  # Pour les calculs scientifiques
@@ -8,6 +9,7 @@ from pathlib import Path
 from itertools import product
 from multiprocessing import Pool
 from fetch_gems import fetch_models_based_on_org
+from threadpoolctl import threadpool_limits
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -63,7 +65,7 @@ def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
         models (dict): map model_name -> Path du modèle JSON
         carb_sources (dict): map nom_source -> id de réaction
         ph_levels (list): liste de tuples (pH_lb, étiquette)
-        ion_params (list): liste de tuples (ion, reaction_id, buffer_lb)
+ ion_params (list): liste de tuples (ion, reaction_id, buffer_lb)
         temp_levels (list): liste de tuples (facteur_temp, étiquette)
         growth_fracs (list): fractions de croissance minimale
         kos (list): knock-outs possibles ou None
@@ -119,7 +121,7 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
     # knock-out
     if ko and ko in m.reactions:
         m.reactions.get_by_id(ko).knock_out()
-    # croissance minimale (si besoin)
+ # croissance minimale (si besoin)
     if WT and bio_rxn:
         cons = m.solver.interface.Constraint(
             m.reactions.get_by_id(bio_rxn).flux_expression,
@@ -129,20 +131,14 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
 
 
 def optimize_citrate(m, bio_rxn) -> tuple:
-    """
-    Optimise l'export de citrate et renvoie ses flux.
-
-    Args:
-        m: modèle COBRApy
-        bio_rxn: id de la réaction de biomass
-    Returns:
-        (flux_FBA, flux_pFBA, flux_biomass_durant_export) ou None
-    """
     m.objective = "EX_cit_e"
+    if "EX_cit_e" not in m.reactions:
+        return None
     sol = m.optimize()
     if sol.status != "optimal":
         return None
-    return sol.fluxes["EX_cit_e"], pfba(m, processes=1).fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
+    pfba_fluxes = pfba(m)
+    return sol.fluxes["EX_cit_e"], pfba_fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
 
 
 def optimize_growth(m, bio_rxn) -> float:
@@ -169,14 +165,24 @@ def optimize_siderophore(m) -> tuple:
     Args:
         m: modèle COBRApy
     Returns:
-        (flux_FBA, flux_pFBA)
+        (flux_FBA, flux_pFBA) ou (nan, nan) si la réaction n'existe pas ou que l'optimisation échoue
     """
     sider_id = "EX_feenter_e"
+    if sider_id not in m.reactions:
+        return np.nan, np.nan  # pas présente dans ce modèle
+
     m.objective = sider_id
     sol = m.optimize()
     if sol.status == "optimal":
-        return sol.fluxes[sider_id], pfba(m, processes=1).fluxes[sider_id]
+        pfba_fluxes = pfba(m)
+        return sol.fluxes[sider_id], pfba_fluxes[sider_id]
     return np.nan, np.nan
+
+
+def run_simulation_wrapper(params):
+    # Chaque worker n'utilise qu'un thread pour BLAS/OpenMP internes
+    with threadpool_limits(limits=1):
+        return run_simulation(params)
 
 
 def run_simulation(params) -> dict:
@@ -213,7 +219,7 @@ def run_simulation(params) -> dict:
         'model': model_name,
         'C_source': c_name,
         'pH': ph_lbl,
-        'ion': ion,
+'ion': ion,
         'ion_lb': round(buf_lb, 2),
         'température': temp_lbl,
         'growth_%': int(frac * 100),
@@ -261,12 +267,12 @@ def main():
     if models_loc.is_dir() and not any(models_loc.iterdir()):
         # Si vide, on fetch tous les modèles depuis BIGG
         url = "http://bigg.ucsd.edu/api/v2/models"
-        fetch_models_based_on_org(url=url, outdir=str(models_loc), organism=["coli"])
+        fetch_models_based_on_org(url=url, outdir=str(models_loc), organisms=["coli"])
     models = {m.stem: m for m in models_loc.iterdir()}
 
     # Step 2: Prépare le plan d'expériences
     ion_params = flatten_ion_buffers(ION_BUFFERS)
-    param_grid = generate_param_grid(models,
+    param_iter = generate_param_grid(models,
                                      CARBON_SOURCES,
                                      PH_LEVELS,
                                      ion_params,
@@ -275,13 +281,18 @@ def main():
                                      KOS)
 
     # Step 3: Exécution parallèle des simulations
-    with Pool() as pool:
-        results = pool.map(run_simulation, param_grid)
-    results = [r for r in results if r]
+    n_procs = 10
 
-    # Step 4: Sauvegarde et résumé
+    with Pool(processes=n_procs) as pool:
+        results = []
+
+        for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=4):
+            if res:
+                results.append(res)
+
     save_results(results, CSV_OUTPUT)
 
 
 if __name__ == '__main__':
     main()
+
