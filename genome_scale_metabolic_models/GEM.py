@@ -204,12 +204,12 @@ def run_simulation(params) -> dict:
     (model_name, path), (c_name, c_exch), (ph_lb, ph_lbl), \
         (ion, rxn_id, buf_lb), (temp_fact, temp_lbl), frac, ko = params
 
-    base = cobra.io.load_json_model(path)
-    bio_rxn = next(r.id for r in base.reactions if "biomass" in r.id.lower())
-    WT = base.optimize().objective_value
-    base.reactions.EX_cit_e.lower_bound = -1000
+    base = cobra.io.load_json_model(path) # Charge le modèle GEM à partir de json
+    bio_rxn = next(r.id for r in base.reactions if "biomass" in r.id.lower()) # Cétecte la réaction de biomass
+    WT = base.optimize().objective_value # Calcul la croissance de référence
+    base.reactions.EX_cit_e.lower_bound = -1000 # Permet exportation de citrate libre
 
-    with base as m:
+    with base as m: # Cloné pour modifier sans altérer base
         configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT, frac)
         cit = optimize_citrate(m, bio_rxn)
         if cit is None:
@@ -232,7 +232,7 @@ def run_simulation(params) -> dict:
         'growth_%': int(frac * 100),
         'KO': ko or 'none',
         'citrate_FBA': round(cit_fba, 4),
-        'citrine_pFBA': round(cit_pfb, 4),
+        'citrate_pFBA': round(cit_pfb, 4),
         'growth_under_cit': round(gr_cit, 4),
         'growth_max': round(growth_max, 4),
         'siderophore_FBA': round(sid_fba, 4),
@@ -288,11 +288,12 @@ def main():
                                      KOS)
 
     # Step 3: Exécution parallèle des simulations
-    n_procs = 10
+    n_procs = 10 # Exploration parallèle avec 10 processus
 
     with Pool(processes=n_procs) as pool:
         results = []
 
+        # Récupère les résultats au fur et à mesure, balance les tache par paquets de 4
         for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=4):
             if res:
                 results.append(res)
