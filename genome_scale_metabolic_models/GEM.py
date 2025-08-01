@@ -180,6 +180,13 @@ def optimize_siderophore(m) -> tuple:
 
 
 def run_simulation_wrapper(params):
+    """
+    Chaque worker du pool limite les threads internes à 1 pour éviter la
+    sur-concurrence CPU quand on utilise le multiprocessing et les biblio multi-threadées
+
+    Args:
+        params: le paramètre
+    """
     # Chaque worker n'utilise qu'un thread pour BLAS/OpenMP internes
     with threadpool_limits(limits=1):
         return run_simulation(params)
