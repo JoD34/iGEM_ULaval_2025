@@ -1,0 +1,136 @@
+---
+hetb:
+  AG1P:
+    - AG1P
+  AG2P:
+    - AG2P
+  AL3P:
+    - AL3P
+  AU1P:
+    - AU1P
+  AU3P:
+    - AU3P
+  BAR:
+    - 'BAR '
+  BE2P:
+    - BE2P
+  BI3P:
+    - BI3P
+  CAL:
+    - 'CAL '
+  CD2:
+    - 'CD  '
+  CE3P:
+    - CE3P
+  CES:
+    - 'CES '
+  CLA:
+    - 'CLA '
+  CO3P:
+    - CO3P
+  CR2P:
+    - CR2P
+  CR3P:
+    - CR3P
+  CU1P:
+    - CU1P
+  CU2P:
+    - CU2P
+  DY3P:
+    - DY3P
+  ER3P:
+    - ER3P
+  EU2P:
+    - EU2P
+  EU3P:
+    - EU3P
+  FE2P:
+    - FE2P
+  FE3P:
+    - FE3P
+  GA3P:
+    - GA3P
+  GD3P:
+    - GD3P
+  HE1:
+    - HE01
+  HG2P:
+    - HG2P
+  HO3P:
+    - HO3P
+  IN3P:
+    - IN3P
+  LA3P:
+    - LA3P
+  LIT:
+    - 'LIT '
+  LU3P:
+    - LU3P
+  MG:
+    - 'MG  '
+  MN2P:
+    - MN2P
+  MN3P:
+    - MN3P
+  ND3P:
+    - ND3P
+  NE1:
+    - NE01
+  NI2P:
+    - NI2P
+  PB2P:
+    - PB2P
+  PD2P:
+    - PD2P
+  PM3P:
+    - PM3P
+  POT:
+    - 'POT '
+  PR3P:
+    - PR3P
+  PT2P:
+    - PT2P
+  PU3P:
+    - PU3P
+  RA2P:
+    - RA2P
+  RH3P:
+    - RH3P
+  RUB:
+    - 'RUB '
+  SC3P:
+    - SC3P
+  SM2P:
+    - SM2P
+  SM3P:
+    - SM3P
+  SN2P:
+    - SN2P
+  SOD:
+    - 'SOD '
+  SR2P:
+    - SR2P
+  TB3P:
+    - TB3P
+  TI1P:
+    - TI1P
+  TI3P:
+    - TI3P
+  TL3P:
+    - TL3P
+  TU3P:
+    - TU3P
+  U3P:
+    - 'U3P '
+  V2P:
+    - 'V2P '
+  V3P:
+    - 'V3P '
+  Y3P:
+    - 'Y3P '
+  YB2P:
+    - YB2P
+  YB3P:
+    - YB3P
+  ZN2:
+    - 'ZN  '

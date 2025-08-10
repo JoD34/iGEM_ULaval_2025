@@ -1,0 +1,15 @@
+atomselect: cannot parse selection text: index 
+atomselect: cannot parse selection text: index 
+    while executing
+"atomselect top "index $bInd""
+    (procedure "::ForceFieldToolKit::GenZMatrix::writeZmat" line 167)
+    invoked from within
+"::ForceFieldToolKit::GenZMatrix::writeZmat $acceptorAtom acceptor $Gnames $outfile"
+    (procedure "::ForceFieldToolKit::GenZMatrix::genZmatrix" line 89)
+    invoked from within
+"::ForceFieldToolKit::GenZMatrix::genZmatrix"
+    invoked from within
+".fftk_gui.hlf.nb.genzmat.run.generate invoke "
+    invoked from within
+".fftk_gui.hlf.nb.genzmat.run.generate instate {pressed !disabled} { .fftk_gui.hlf.nb.genzmat.run.generate state !pressed; .fftk_gui.hlf.nb.genzmat.run..."
+    (command bound to event)

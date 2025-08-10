@@ -1,0 +1,80 @@
+HETATM    1  C1  ACN A   1       2.792   3.205   5.390  1.00 71.59      A    C  
+HETATM    2  N1  ACN A   1       1.607   1.281   4.509  1.00 82.39      A    N  
+HETATM    3  O1  ACN A   1       2.161   2.921   3.125  1.00 62.28      A    O  
+HETATM    4  C2  ACN A   1       2.161   2.454   4.256  1.00 80.21      A    C  
+HETATM    5  N2  ACN A   1      -1.964  -1.176   1.786  1.00 84.18      A    N  
+HETATM    6  O2  ACN A   1      -4.792  -1.474   3.942  1.00 59.54      A    O  
+HETATM    7  C3  ACN A   1       0.401   1.164   5.391  1.00 76.98      A    C  
+HETATM    8  N3  ACN A   1       2.186  -0.488  -2.909  1.00 86.21      A    N  
+HETATM    9  O3  ACN A   1      -4.492  -0.331   2.148  1.00 59.06      A    O  
+HETATM   10  C4  ACN A   1      -0.322  -0.153   5.406  1.00 78.71      A    C  
+HETATM   11  N4  ACN A   1       3.740   3.258   0.015  1.00 86.84      A    N  
+HETATM   12  O4  ACN A   1      -2.100  -2.811   0.214  1.00 71.31      A    O  
+HETATM   13  C5  ACN A   1      -1.232  -0.209   4.176  1.00 79.65      A    C  
+HETATM   14  O5  ACN A   1       0.158  -1.389  -3.394  1.00 70.85      A    O  
+HETATM   15  C6  ACN A   1      -1.823  -1.680   4.068  1.00 80.69      A    C  
+HETATM   16  O6  ACN A   1       4.451   2.435   1.975  1.00 71.01      A    O  
+HETATM   17  C7  ACN A   1      -2.671  -1.846   2.844  1.00 82.61      A    C  
+HETATM   18  O7  ACN A   1       2.705   2.469   0.051  1.00 77.98      A    O  
+HETATM   19  C8  ACN A   1      -4.062  -1.173   2.963  1.00 75.83      A    C  
+HETATM   20  O8  ACN A   1       2.877  -1.797  -5.145  1.00 60.64      A    O  
+HETATM   21  C9  ACN A   1      -1.712  -1.701   0.576  1.00 83.88      A    C  
+HETATM   22  O9  ACN A   1       2.648  -0.014  -6.447  1.00 63.41      A    O  
+HETATM   23  C10 ACN A   1      -0.836  -0.771  -0.332  1.00 83.65      A    C  
+HETATM   24  O10 ACN A   1       1.095  -0.908   2.063  1.00 61.20      A    O  
+HETATM   25  C11 ACN A   1       0.692  -1.150  -0.175  1.00 84.54      A    C  
+HETATM   26  O11 ACN A   1       1.216  -2.925   1.309  1.00 62.27      A    O  
+HETATM   27  C12 ACN A   1       1.162  -2.065  -1.348  1.00 81.71      A    C  
+HETATM   28  O12 ACN A   1       1.372   0.047  -0.188  1.00 69.94      A    O  
+HETATM   29  C13 ACN A   1       1.117  -1.261  -2.679  1.00 84.93      A    C  
+HETATM   30  O13 ACN A   1       2.132   0.210   3.992  1.00 75.39      A    O  
+HETATM   31  C14 ACN A   1       2.328   0.331  -4.094  1.00 86.02      A    C  
+HETATM   32  C15 ACN A   1       3.396   1.337  -3.829  1.00 84.33      A    C  
+HETATM   33  C16 ACN A   1       3.075   2.173  -2.584  1.00 82.85      A    C  
+HETATM   34  C17 ACN A   1       4.199   3.138  -2.382  1.00 81.61      A    C  
+HETATM   35  C18 ACN A   1       3.985   4.001  -1.205  1.00 83.02      A    C  
+HETATM   36  C19 ACN A   1       4.508   3.344   1.139  1.00 84.17      A    C  
+HETATM   37  C20 ACN A   1       5.329   4.582   1.419  1.00 77.20      A    C  
+HETATM   38  C21 ACN A   1       2.631  -0.545  -5.312  1.00 82.03      A    C  
+HETATM   39  C22 ACN A   1       1.024  -1.700   1.170  1.00 75.65      A    C  
+HETATM   40 FE   FE3PB1111       2.639   1.008   1.758  1.00 76.87      ION Fe  
+CONECT    1    4
+CONECT    2    4    7   30
+CONECT    3    4
+CONECT    4    1    2    3
+CONECT    5   17   21
+CONECT    6   19
+CONECT    7    2   10
+CONECT    8   29   31
+CONECT    9   19
+CONECT   10    7   13
+CONECT   11   18   35   36
+CONECT   12   21
+CONECT   13   10   15
+CONECT   14   29
+CONECT   15   13   17
+CONECT   16   36
+CONECT   17    5   15   19
+CONECT   18   11
+CONECT   19    6    9   17
+CONECT   20   38
+CONECT   21    5   12   23
+CONECT   22   38
+CONECT   23   21   25
+CONECT   24   39
+CONECT   25   23   27   28   39
+CONECT   26   39
+CONECT   27   25   29
+CONECT   28   25
+CONECT   29    8   14   27
+CONECT   30    2
+CONECT   31    8   32   38
+CONECT   32   31   33
+CONECT   33   32   34
+CONECT   34   33   35
+CONECT   35   11   34
+CONECT   36   11   16   37
+CONECT   37   36
+CONECT   38   20   22   31
+CONECT   39   24   25   26
+END
