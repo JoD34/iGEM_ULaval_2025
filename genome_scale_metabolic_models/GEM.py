@@ -124,13 +124,8 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
         m.reactions.get_by_id(ko).knock_out()
  # croissance minimale (si besoin)
     if WT and bio_rxn:
-        cname = f"min_growth_{os.getpid()}_{uuid.uuid4().hex}"
-        cons = m.solver.interface.Constraint(
-            m.reactions.get_by_id(bio_rxn).flux_expression,
-            lb=0, ub=1e6, name=cname
-        )
-        m.add_cons_vars(cons)
-
+        lb_min = max(0.0, WT * float(frac))
+        m.reactions.get_by_id(bio_rxn).lower_bound = lb_min
 
 def optimize_citrate(m, bio_rxn) -> tuple:
     if "EX_cit_e" not in m.reactions:
@@ -211,18 +206,18 @@ def run_simulation(params) -> dict:
     WT = base.optimize().objective_value # Calcul la croissance de référence
     base.reactions.EX_cit_e.lower_bound = -1000 # Permet exportation de citrate libre
 
-    with base as m: # Cloné pour modifier sans altérer base
-        configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT, frac)
-        cit = optimize_citrate(m, bio_rxn)
-        if cit is None:
-            return None
-        cit_fba, cit_pfb, gr_cit = cit
+    m = base.copy() # Cloné pour modifier sans altérer base
+    configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT, frac)
+    cit = optimize_citrate(m, bio_rxn)
+    if cit is None:
+        return None
+    cit_fba, cit_pfb, gr_cit = cit
 
-        growth_max = optimize_growth(m, bio_rxn)
-        if growth_max is None:
-            return None
+    growth_max = optimize_growth(m, bio_rxn)
+    if growth_max is None:
+        return None
 
-        sid_fba, sid_pfb = optimize_siderophore(m)
+    sid_fba, sid_pfb = optimize_siderophore(m)
 
     return {
         'model': model_name,
