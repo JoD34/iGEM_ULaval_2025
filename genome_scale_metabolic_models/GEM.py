@@ -1,4 +1,4 @@
-import os
+import os, uuid
 import cobra    # Pour l'analyse du métabolisme
 from cobra.flux_analysis import pfba
 
@@ -7,6 +7,7 @@ import numpy as np  # Pour les calculs scientifiques
 import warnings
 from pathlib import Path
 from itertools import product
+from multiprocessing import get_context
 from multiprocessing import Pool
 from fetch_gems import fetch_models_based_on_org
 from threadpoolctl import threadpool_limits
@@ -123,17 +124,18 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
         m.reactions.get_by_id(ko).knock_out()
  # croissance minimale (si besoin)
     if WT and bio_rxn:
+        cname = f"min_growth_{os.getpid()}_{uuid.uuid4().hex}"
         cons = m.solver.interface.Constraint(
             m.reactions.get_by_id(bio_rxn).flux_expression,
-            lb=0, ub=1e6, name="min_growth"
+            lb=0, ub=1e6, name=cname
         )
         m.add_cons_vars(cons)
 
 
 def optimize_citrate(m, bio_rxn) -> tuple:
-    m.objective = "EX_cit_e"
     if "EX_cit_e" not in m.reactions:
         return None
+    m.objective = "EX_cit_e"
     sol = m.optimize()
     if sol.status != "optimal":
         return None
@@ -289,8 +291,9 @@ def main():
 
     # Step 3: Exécution parallèle des simulations
     n_procs = 10 # Exploration parallèle avec 10 processus
+    ctx = get_context("spawn")
 
-    with Pool(processes=n_procs) as pool:
+    with ctx.Pool(processes=n_procs) as pool:
         results = []
 
         # Récupère les résultats au fur et à mesure, balance les tache par paquets de 4
