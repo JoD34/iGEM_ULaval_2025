@@ -1,7 +1,7 @@
 import os, uuid
 import cobra    # Pour l'analyse du métabolisme
 from cobra.flux_analysis import pfba
-
+from cobra import io as cbio
 import pandas as pd
 import numpy as np  # Pour les calculs scientifiques
 import warnings
@@ -134,7 +134,10 @@ def optimize_citrate(m, bio_rxn) -> tuple:
     sol = m.optimize()
     if sol.status != "optimal":
         return None
-    pfba_fluxes = pfba(m.copy())
+    # copie profonde "propre" pour pfba
+    mpf = cbio.from_json(cbio.to_json(m))
+    mpf.solver = "glpk"
+    pfba_fluxes = pfba(mpf)
     return sol.fluxes["EX_cit_e"], pfba_fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
 
 
@@ -166,15 +169,15 @@ def optimize_siderophore(m) -> tuple:
     """
     sider_id = "EX_feenter_e"
     if sider_id not in m.reactions:
-        return np.nan, np.nan  # pas présente dans ce modèle
-
+        return np.nan, np.nan
     m.objective = sider_id
     sol = m.optimize()
     if sol.status == "optimal":
-        pfba_fluxes = pfba(m.copy())
+        mpf = cbio.from_json(cbio.to_json(m))
+        mpf.solver = "glpk"
+        pfba_fluxes = pfba(mpf)
         return sol.fluxes[sider_id], pfba_fluxes[sider_id]
     return np.nan, np.nan
-
 
 def run_simulation_wrapper(params):
     """
@@ -204,7 +207,8 @@ def run_simulation(params) -> dict:
     base = cobra.io.load_json_model(path) # Charge le modèle GEM à partir de json
     bio_rxn = next(r.id for r in base.reactions if "biomass" in r.id.lower()) # Cétecte la réaction de biomass
     WT = base.optimize().objective_value # Calcul la croissance de référence
-    base.reactions.EX_cit_e.lower_bound = -1000 # Permet exportation de citrate libre
+    if "EX_cit_e" in base.reactions:
+        base.reactions.EX_cit_e.lower_bound = -1000 # Permet exportation de citrate libre
 
     m = base.copy() # Cloné pour modifier sans altérer base
     m.solver = "glpk" 
@@ -293,7 +297,7 @@ def main():
         results = []
 
         # Récupère les résultats au fur et à mesure, balance les tache par paquets de 4
-        for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=4):
+        for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=1):
             if res:
                 results.append(res)
 
