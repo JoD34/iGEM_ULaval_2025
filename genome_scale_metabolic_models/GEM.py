@@ -134,7 +134,7 @@ def optimize_citrate(m, bio_rxn) -> tuple:
     sol = m.optimize()
     if sol.status != "optimal":
         return None
-    pfba_fluxes = pfba(m)
+    pfba_fluxes = pfba(m.copy())
     return sol.fluxes["EX_cit_e"], pfba_fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
 
 
@@ -171,7 +171,7 @@ def optimize_siderophore(m) -> tuple:
     m.objective = sider_id
     sol = m.optimize()
     if sol.status == "optimal":
-        pfba_fluxes = pfba(m)
+        pfba_fluxes = pfba(m.copy())
         return sol.fluxes[sider_id], pfba_fluxes[sider_id]
     return np.nan, np.nan
 
@@ -207,6 +207,7 @@ def run_simulation(params) -> dict:
     base.reactions.EX_cit_e.lower_bound = -1000 # Permet exportation de citrate libre
 
     m = base.copy() # Cloné pour modifier sans altérer base
+    m.solver = "glpk" 
     configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT, frac)
     cit = optimize_citrate(m, bio_rxn)
     if cit is None:
@@ -223,7 +224,7 @@ def run_simulation(params) -> dict:
         'model': model_name,
         'C_source': c_name,
         'pH': ph_lbl,
-'ion': ion,
+        'ion': ion,
         'ion_lb': round(buf_lb, 2),
         'température': temp_lbl,
         'growth_%': int(frac * 100),
