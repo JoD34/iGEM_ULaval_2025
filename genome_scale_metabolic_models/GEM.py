@@ -1,4 +1,5 @@
-import os, uuid
+from cobra.flux_analysis.parsimonious import add_pfba
+from cobra import io as cbio
 import cobra    # Pour l'analyse du métabolisme
 from cobra.flux_analysis import pfba
 from cobra import io as cbio
@@ -134,11 +135,14 @@ def optimize_citrate(m, bio_rxn) -> tuple:
     sol = m.optimize()
     if sol.status != "optimal":
         return None
-    # copie profonde "propre" pour pfba
+
+    # pFBA sans context manager, sur une copie "propre"
     mpf = cbio.from_json(cbio.to_json(m))
     mpf.solver = "glpk"
-    pfba_fluxes = pfba(mpf)
-    return sol.fluxes["EX_cit_e"], pfba_fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
+    mpf.objective = "EX_cit_e"      # garder le même objectif
+    add_pfba(mpf)                    # ajoute l’objectif parsimonieux
+    pf_sol = mpf.optimize()
+    return sol.fluxes["EX_cit_e"], pf_sol.fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
 
 
 def optimize_growth(m, bio_rxn) -> float:
@@ -159,25 +163,20 @@ def optimize_growth(m, bio_rxn) -> float:
 
 
 def optimize_siderophore(m) -> tuple:
-    """
-    Optimise l'export du sidérophore et renvoie ses flux.
-
-    Args:
-        m: modèle COBRApy
-    Returns:
-        (flux_FBA, flux_pFBA) ou (nan, nan) si la réaction n'existe pas ou que l'optimisation échoue
-    """
     sider_id = "EX_feenter_e"
     if sider_id not in m.reactions:
         return np.nan, np.nan
     m.objective = sider_id
     sol = m.optimize()
-    if sol.status == "optimal":
-        mpf = cbio.from_json(cbio.to_json(m))
-        mpf.solver = "glpk"
-        pfba_fluxes = pfba(mpf)
-        return sol.fluxes[sider_id], pfba_fluxes[sider_id]
-    return np.nan, np.nan
+    if sol.status != "optimal":
+        return np.nan, np.nan
+
+    mpf = cbio.from_json(cbio.to_json(m))
+    mpf.solver = "glpk"
+    mpf.objective = sider_id
+    add_pfba(mpf)
+    pf_sol = mpf.optimize()
+    return sol.fluxes[sider_id], pf_sol.fluxes[sider_id]
 
 def run_simulation_wrapper(params):
     """
