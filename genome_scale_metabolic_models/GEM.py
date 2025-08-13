@@ -1,7 +1,6 @@
-from cobra.flux_analysis.parsimonious import add_pfba
-from cobra import io as cbio
+#from cobra.flux_analysis.parsimonious import pfba as run_pfba
 import cobra    # Pour l'analyse du métabolisme
-from cobra.flux_analysis import pfba
+#from cobra.flux_analysis import pfba
 from cobra import io as cbio
 import pandas as pd
 import numpy as np  # Pour les calculs scientifiques
@@ -15,41 +14,52 @@ from threadpoolctl import threadpool_limits
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
+MODELS = {}
+
 # -- Configuration des constantes et paramètres --
-PH_LEVELS = [(-20, "extrême acide"), (-10, "acide pH~5"), (-1, "neutre pH~7"),
-             (0, "basique pH~9"), (5, "très basique")]
+PH_LEVELS = [
+#    (-20, "extrême acide"),
+    (-10, "acide pH~5"),
+    (-1, "neutre pH~7"),
+    (0, "basique pH~9")
+#    (5, "très basique")
+]
 CARBON_SOURCES = {
     "glucose": "EX_glc__D_e",
-    "acetate": "EX_ac_e",
-    "glycerol": "EX_glyc_e",
-    "succinate": "EX_succ_e",
-    "ethanol": "EX_etoh_e",
+    "acetate": "EX_ac_e"
+#    "glycerol": "EX_glyc_e",
+#    "succinate": "EX_succ_e",
+#    "ethanol": "EX_etoh_e",
 }
 ION_BUFFERS = {
     "HCO3": ("EX_hco3_e", np.linspace(-20, 0, 9)),
-    "Pi":   ("EX_pi_e",   np.linspace(-20, 0, 9)),
-    "NH4":  ("EX_nh4_e",  np.linspace(-20, 0, 9)),
-    "CO2":  ("EX_co2_e",  np.linspace(-5, 0, 11)),
+#    "Pi":   ("EX_pi_e",   np.linspace(-20, 0, 9)),
+#    "NH4":  ("EX_nh4_e",  np.linspace(-20, 0, 9)),
+#    "CO2":  ("EX_co2_e",  np.linspace(-5, 0, 11)),
     "Fe":   ("EX_fe2_e",  np.linspace(-1000, -1, 10)),
 }
-TEMP_LEVELS = [(0.7, "faible (~30 °C)"), (0.9, "légère (~34 °C)"),
-               (1.0, "standard (~37 °C)"), (1.1, "modérée (~40 °C)"),
-               (1.3, "élevée (~45 °C)")]
+TEMP_LEVELS = [
+    #(0.7, "faible (~30 °C)"),
+    (0.9, "légère (~34 °C)"),
+    (1.0, "standard (~37 °C)"),
+    (1.1, "modérée (~40 °C)"),
+    #(1.3, "élevée (~45 °C)")
+]
 TEMP_SENSITIVE = ["ACONTa", "ACONTb", "ICDHyr", "SUCDi"]
-GROWTH_FRACS = [0.0, 0.05, 0.1, 0.2]
-KOS = [None, "ICDHyr"]
+GROWTH_FRACS = [
+    0.0,
+    #0.05,
+    0.1,
+    #0.2
+]
+KOS = [
+    None
+#    "ICDHyr"
+]
 CSV_OUTPUT = Path('citrate_growth_siderophore_scan.csv')
 
 # -- Fonctions utilitaires --
 def flatten_ion_buffers(buffers: dict) -> list:
-    """
-    Aplatie la structure ION_BUFFERS en une liste de tuples (ion, rxn_id, buf_lb).
-
-    Args:
-        buffers (dict): map ion -> (rxn_id, liste de bornes)
-    Returns:
-        list of tuples: [(ion, reaction_id, buffer_lower_bound), ...]
-    """
     return [
         (ion, rxn_id, buf_lb)
         for ion, (rxn_id, buf_list) in buffers.items()
@@ -60,20 +70,6 @@ def flatten_ion_buffers(buffers: dict) -> list:
 def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
                         ion_params: list, temp_levels: list,
                         growth_fracs: list, kos: list):
-    """
-    Génère un itérateur cartésien de toutes les combinaisons de paramètres.
-
-    Args:
-        models (dict): map model_name -> Path du modèle JSON
-        carb_sources (dict): map nom_source -> id de réaction
-        ph_levels (list): liste de tuples (pH_lb, étiquette)
- ion_params (list): liste de tuples (ion, reaction_id, buffer_lb)
-        temp_levels (list): liste de tuples (facteur_temp, étiquette)
-        growth_fracs (list): fractions de croissance minimale
-        kos (list): knock-outs possibles ou None
-    Returns:
-        Iterator: itertools.product générant un tuple complet par combinaison
-    """
     return product(
         models.items(),
         carb_sources.items(),
@@ -87,20 +83,6 @@ def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
 
 def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
                     temp_fact, ko, bio_rxn, WT, frac):
-    """
-    Applique les contraintes expérimentales sur le modèle COBRApy cloné.
-
-    Args:
-        m: modèle COBRApy (contexte `with base as m`)
-        c_exch (str): id de la réaction de carbone à activer
-        ph_lb (float): borne inférieure pour la réaction EX_h_e
-        rxn_id (str): id de la réaction tampon ionique
-        buf_lb (float): borne inférieure pour la réaction tampon
-        temp_fact (float): facteur multiplicatif appliqué aux réactions sensibles
-        ko (str|None): id de réaction à KO, ou None
-        bio_rxn (str): id de la réaction de biomass
-        WT (float): flux de biomass en condition WT
-    """
     # Désactive toutes les sources de carbone
     for exch in CARBON_SOURCES.values():
         if exch in m.reactions:
@@ -128,7 +110,7 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
         lb_min = max(0.0, WT * float(frac))
         m.reactions.get_by_id(bio_rxn).lower_bound = lb_min
 
-def optimize_citrate(m, bio_rxn) -> tuple:
+def optimize_citrate(m, bio_rxn):
     if "EX_cit_e" not in m.reactions:
         return None
     m.objective = "EX_cit_e"
@@ -136,25 +118,17 @@ def optimize_citrate(m, bio_rxn) -> tuple:
     if sol.status != "optimal":
         return None
 
-    # pFBA sans context manager, sur une copie "propre"
-    mpf = cbio.from_json(cbio.to_json(m))
-    mpf.solver = "glpk"
-    mpf.objective = "EX_cit_e"      # garder le même objectif
-    add_pfba(mpf)                    # ajoute l’objectif parsimonieux
-    pf_sol = mpf.optimize()
-    return sol.fluxes["EX_cit_e"], pf_sol.fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
+#    m2 = m.copy()
+#    m2.solver = "glpk"       # nouvelle instance
+#    m2.solver.problem = None # <<< purge l’état interne du solveur
+#     m2.objective = "EX_cit_e"  # optionnel, déjà défini
+#    pf_sol = run_pfba(m2)
+
+#    return sol.fluxes["EX_cit_e"], pf_sol.fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
+    return sol.fluxes["EX_cit_e"], np.nan, sol.fluxes[bio_rxn]
 
 
 def optimize_growth(m, bio_rxn) -> float:
-    """
-    Optimise la croissance maximale (biomass objective).
-
-    Args:
-        m: modèle COBRApy
-        bio_rxn: id de la réaction de biomass
-    Returns:
-        growth_max (float) ou None
-    """
     m.objective = bio_rxn
     sol = m.optimize()
     if sol.status != "optimal":
@@ -162,7 +136,7 @@ def optimize_growth(m, bio_rxn) -> float:
     return sol.objective_value
 
 
-def optimize_siderophore(m) -> tuple:
+def optimize_siderophore(m):
     sider_id = "EX_feenter_e"
     if sider_id not in m.reactions:
         return np.nan, np.nan
@@ -171,39 +145,32 @@ def optimize_siderophore(m) -> tuple:
     if sol.status != "optimal":
         return np.nan, np.nan
 
-    mpf = cbio.from_json(cbio.to_json(m))
-    mpf.solver = "glpk"
-    mpf.objective = sider_id
-    add_pfba(mpf)
-    pf_sol = mpf.optimize()
-    return sol.fluxes[sider_id], pf_sol.fluxes[sider_id]
+#    m2 = m.copy()
+#    m2.solver = "glpk"
+#    m2.solver.problem = None  # <<< purge
+#    m2.objective = sider_id
+#    pf_sol = run_pfba(m2)
+
+#    return sol.fluxes[sider_id], pf_sol.fluxes[sider_id]
+    return sol.fluxes[sider_id], np.nan
 
 def run_simulation_wrapper(params):
-    """
-    Chaque worker du pool limite les threads internes à 1 pour éviter la
-    sur-concurrence CPU quand on utilise le multiprocessing et les biblio multi-threadées
-
-    Args:
-        params: le paramètre
-    """
     # Chaque worker n'utilise qu'un thread pour BLAS/OpenMP internes
     with threadpool_limits(limits=1):
         return run_simulation(params)
 
+def _init_worker(models_paths):
+    # Chargé une fois par worker
+    import cobra
+    global MODELS
+    MODELS = {name: cobra.io.load_json_model(str(p)) for name, p in models_paths.items()}
+
 
 def run_simulation(params) -> dict:
-    """
-    Exécute une simulation complète pour un jeu de paramètres.
-
-    Args:
-        params: tuple fourni par generate_param_grid
-    Returns:
-        dict des résultats ou None si échec d'une étape
-    """
     (model_name, path), (c_name, c_exch), (ph_lb, ph_lbl), \
         (ion, rxn_id, buf_lb), (temp_fact, temp_lbl), frac, ko = params
 
-    base = cobra.io.load_json_model(path) # Charge le modèle GEM à partir de json
+    base = MODELS[model_name]
     bio_rxn = next(r.id for r in base.reactions if "biomass" in r.id.lower()) # Cétecte la réaction de biomass
     WT = base.optimize().objective_value # Calcul la croissance de référence
     if "EX_cit_e" in base.reactions:
@@ -242,13 +209,6 @@ def run_simulation(params) -> dict:
 
 
 def save_results(results: list, output: Path):
-    """
-    Sauvegarde les résultats dans un CSV et affiche un résumé.
-
-    Args:
-        results (list): liste de dicts de résultats
-        output (Path): chemin vers le CSV de sortie
-    """
     df = pd.DataFrame(results)
     df.to_csv(output, index=False)
     print(f"Scénarios simulés : {len(df)}\n")
@@ -261,13 +221,6 @@ def save_results(results: list, output: Path):
 
 
 def main():
-    """
-    Point d'entrée principal :
-    - Vérifie/télécharge les modèles
-    - Génère le plan d'expériences
-    - Exécute les simulations en parallèle
-    - Sauvegarde et affiche les résultats
-    """
     # Step 1: Assert models présents
     models_loc = Path('models')
     models_loc.mkdir(exist_ok=True)
@@ -292,15 +245,17 @@ def main():
     n_procs = 10 # Exploration parallèle avec 10 processus
     ctx = get_context("spawn")
 
-    with ctx.Pool(processes=n_procs) as pool:
+    with ctx.Pool(processes=n_procs, initializer=_init_worker, initargs=(models,)) as pool:
         results = []
-
-        # Récupère les résultats au fur et à mesure, balance les tache par paquets de 4
-        for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=1):
+        for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=10):
             if res:
                 results.append(res)
-
-    save_results(results, CSV_OUTPUT)
+                if len(results) % 200 == 0:
+                    save_results(results, CSV_OUTPUT)  # checkpoint
+                    results = []
+    # à la fin, sauve le reste
+    if results:
+        save_results(results, CSV_OUTPUT)
 
 
 if __name__ == '__main__':
