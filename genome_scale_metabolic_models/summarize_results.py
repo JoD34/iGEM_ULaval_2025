@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+import pandas as pd
+import numpy as np
+
+# Colonnes à afficher (si présentes dans le CSV)
+DISPLAY_COLS = [
+    "model","KO","carbon","pH_lb","pH_label",
+    "ion","ion_exch","temp_factor","temp_label","growth_frac",
+    "WT_growth","growth_max","citrate_FBA",
+    "growth_at_citrate","siderophore_FBA"
+]
+
+NUMERIC_COLS = [
+    "pH_lb","temp_factor","growth_frac","WT_growth","growth_max",
+    "citrate_FBA","growth_at_citrate",
+    "siderophore_FBA"
+]
+
+SECTIONS = [
+    ("growth_max",        "Top 10 — Croissance maximale"),
+    ("citrate_FBA",       "Top 10 — Export de citrate (FBA)"),
+    ("siderophore_FBA",   "Top 10 — Production de sidérophore (FBA)"),
+]
+
+def coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    for col in NUMERIC_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+def top_n(df: pd.DataFrame, metric: str, n: int = 10) -> pd.DataFrame:
+    if metric not in df.columns:
+        return pd.DataFrame()
+    sub = df.copy()
+    sub = coerce_numeric(sub)
+    # garder seulement lignes avec une valeur de metric
+    sub = sub[~sub[metric].isna()]
+    if sub.empty:
+        return sub
+    # tri principal: metric desc; secondaires utiles si dispo
+    sort_cols = [metric]
+    ascending = [False]
+    if "WT_growth" in sub.columns:
+        sort_cols += ["WT_growth"]
+        ascending += [False]
+    return sub.sort_values(sort_cols, ascending=ascending).head(n)
+
+def print_section(title: str, table: pd.DataFrame):
+    print("=" * 100)
+    print(title)
+    print("=" * 100)
+    if table.empty:
+        print("Aucune donnée disponible pour cette métrique.\n")
+        return
+    cols = [c for c in DISPLAY_COLS if c in table.columns]
+    print(table[cols].to_string(index=False))
+    print()
+
+def main():
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <results.csv> [N_top]")
+        sys.exit(1)
+
+    csv_path = Path(sys.argv[1])
+    if not csv_path.exists():
+        print(f"Erreur : fichier introuvable : {csv_path}")
+        sys.exit(1)
+
+    try:
+        N = int(sys.argv[2]) if len(sys.argv) >= 3 else 10
+    except Exception:
+        N = 10
+
+    pd.set_option("display.width", 180)
+    pd.set_option("display.max_columns", None)
+
+    df = pd.read_csv(csv_path)
+
+    for metric, title in SECTIONS:
+        t = top_n(df, metric, n=N)
+        print_section(title, t)
+
+if __name__ == "__main__":
+    main()

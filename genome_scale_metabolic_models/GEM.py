@@ -26,8 +26,8 @@ PH_LEVELS = [
 ]
 CARBON_SOURCES = {
     "glucose": "EX_glc__D_e",
-    "acetate": "EX_ac_e"
-#    "glycerol": "EX_glyc_e",
+    "acetate": "EX_ac_e",
+    "glycerol": "EX_glyc_e",
 #    "succinate": "EX_succ_e",
 #    "ethanol": "EX_etoh_e",
 }
@@ -39,11 +39,11 @@ ION_BUFFERS = {
     "Fe":   ("EX_fe2_e",  np.linspace(-1000, -1, 10)),
 }
 TEMP_LEVELS = [
-    #(0.7, "faible (~30 °C)"),
+#    (0.7, "faible (~30 °C)"),
     (0.9, "légère (~34 °C)"),
     (1.0, "standard (~37 °C)"),
     (1.1, "modérée (~40 °C)"),
-    #(1.3, "élevée (~45 °C)")
+    (1.3, "élevée (~45 °C)")
 ]
 TEMP_SENSITIVE = ["ACONTa", "ACONTb", "ICDHyr", "SUCDi"]
 GROWTH_FRACS = [
@@ -53,8 +53,8 @@ GROWTH_FRACS = [
     #0.2
 ]
 KOS = [
-    None
-#    "ICDHyr"
+    None,
+    "ICDHyr"
 ]
 CSV_OUTPUT = Path('citrate_growth_siderophore_scan.csv')
 
@@ -112,11 +112,11 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
 
 def optimize_citrate(m, bio_rxn):
     if "EX_cit_e" not in m.reactions:
-        return None
+        return (np.nan, np.nan, np.nan)
     m.objective = "EX_cit_e"
     sol = m.optimize()
     if sol.status != "optimal":
-        return None
+        return (np.nan, np.nan, np.nan)
 
 #    m2 = m.copy()
 #    m2.solver = "glpk"       # nouvelle instance
@@ -125,8 +125,13 @@ def optimize_citrate(m, bio_rxn):
 #    pf_sol = run_pfba(m2)
 
 #    return sol.fluxes["EX_cit_e"], pf_sol.fluxes["EX_cit_e"], sol.fluxes[bio_rxn]
-    return sol.fluxes["EX_cit_e"], np.nan, sol.fluxes[bio_rxn]
-
+    gr = np.nan
+    if bio_rxn and bio_rxn in m.reactions:
+        try:
+            gr = sol.fluxes[bio_rxn]
+        except Exception:
+            gr = np.nan
+    return sol.fluxes["EX_cit_e"], np.nan, gr
 
 def optimize_growth(m, bio_rxn) -> float:
     m.objective = bio_rxn
@@ -159,6 +164,20 @@ def run_simulation_wrapper(params):
     with threadpool_limits(limits=1):
         return run_simulation(params)
 
+def _ensure_minimal_medium(m):
+    """Active un milieu minimal standard pour éviter les infeasibilités arbitraires."""
+    needed = [
+        ("EX_o2_e",  -20.0),   # oxygène
+        ("EX_nh4_e", -10.0),   # ammonium
+        ("EX_pi_e",  -10.0),   # phosphate
+        ("EX_so4_e", -10.0),   # sulfate
+        ("EX_h2o_e", -1000.0), # eau
+        ("EX_h_e",   -1000.0), # protons (utile pour certaines balances)
+    ]
+    for rid, lb in needed:
+        if rid in m.reactions:
+            m.reactions.get_by_id(rid).lower_bound = lb
+
 def _init_worker(models_paths):
     # Chargé une fois par worker
     import cobra
@@ -167,46 +186,73 @@ def _init_worker(models_paths):
 
 
 def run_simulation(params) -> dict:
+    import numpy as np
+
     (model_name, path), (c_name, c_exch), (ph_lb, ph_lbl), \
         (ion, rxn_id, buf_lb), (temp_fact, temp_lbl), frac, ko = params
 
+    def nan_tuple(n=1):
+        return tuple(np.nan for _ in range(n))
+
+    # Charger modèle
     base = MODELS[model_name]
-    bio_rxn = next(r.id for r in base.reactions if "biomass" in r.id.lower()) # Cétecte la réaction de biomass
-    WT = base.optimize().objective_value # Calcul la croissance de référence
-    if "EX_cit_e" in base.reactions:
-        base.reactions.EX_cit_e.lower_bound = -1000 # Permet exportation de citrate libre
 
-    m = base.copy() # Cloné pour modifier sans altérer base
-    m.solver = "glpk" 
-    configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT, frac)
-    cit = optimize_citrate(m, bio_rxn)
-    if cit is None:
-        return None
-    cit_fba, cit_pfb, gr_cit = cit
+    # Trouver la réaction biomasse
+    bio_rxn = next((r.id for r in base.reactions if "biomass" in r.id.lower()), None)
 
-    growth_max = optimize_growth(m, bio_rxn)
+    # ---- WT growth dans l’environnement (sans KO, sans contrainte frac) ----
+    m_wt = base.copy()
+    _ensure_minimal_medium(m_wt)
+    if "EX_cit_e" in m_wt.reactions:
+        m_wt.reactions.EX_cit_e.lower_bound = -1000.0
+    configure_model(m_wt, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, None, bio_rxn, WT=None, frac=0.0)
+    WT_growth = optimize_growth(m_wt, bio_rxn) if bio_rxn else np.nan
+
+    # NOTE: NE PAS filtrer sur WT_growth <= 0 — on garde la combinaison quand même.
+    WT_safe = float(WT_growth) if WT_growth is not None and np.isfinite(WT_growth) and WT_growth > 0 else 0.0
+
+    # ---- Modèle final avec KO + contrainte de fraction ----
+    m = base.copy()
+    _ensure_minimal_medium(m)
+    if "EX_cit_e" in m.reactions:
+        m.reactions.EX_cit_e.lower_bound = -1000.0
+    configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT=WT_safe, frac=frac)
+
+    # Growth max
+    growth_max = optimize_growth(m.copy(), bio_rxn) if bio_rxn else np.nan
     if growth_max is None:
-        return None
+        growth_max = np.nan
 
-    sid_fba, sid_pfb = optimize_siderophore(m)
+    # Citrate
+    cit_fba, cit_pfb, gr_cit = optimize_citrate(m.copy(), bio_rxn)
 
+    # Sidérophore
+    sid_fba, sid_pfb = optimize_siderophore(m.copy())
+
+    # Ligne finale (toujours renvoyée)
     return {
         'model': model_name,
-        'C_source': c_name,
-        'pH': ph_lbl,
+        'KO': ko or 'None',
+        'carbon': c_name,
+        'carbon_exch': c_exch,
+        'pH_lb': ph_lb,
+        'pH_label': ph_lbl,
         'ion': ion,
-        'ion_lb': round(buf_lb, 2),
-        'température': temp_lbl,
-        'growth_%': int(frac * 100),
-        'KO': ko or 'none',
-        'citrate_FBA': round(cit_fba, 4),
-        'citrate_pFBA': round(cit_pfb, 4),
-        'growth_under_cit': round(gr_cit, 4),
-        'growth_max': round(growth_max, 4),
-        'siderophore_FBA': round(sid_fba, 4),
-        'siderophore_pFBA': round(sid_pfb, 4),
-    }
+        'ion_exch': rxn_id,
+        'temp_factor': temp_fact,
+        'temp_label': temp_lbl,
+        'growth_frac': float(frac),
 
+        'WT_growth': WT_growth if WT_growth is not None else np.nan,
+        'growth_max': growth_max,
+
+        'citrate_FBA': cit_fba,
+        'citrate_pFBA': cit_pfb,
+        'growth_at_citrate': gr_cit,
+
+        'siderophore_FBA': sid_fba,
+        'siderophore_pFBA': sid_pfb,
+    }
 
 def save_results(results: list, output: Path):
     df = pd.DataFrame(results)
@@ -248,7 +294,7 @@ def main():
     with ctx.Pool(processes=n_procs, initializer=_init_worker, initargs=(models,)) as pool:
         results = []
         for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=10):
-            if res:
+            if res is not None:
                 results.append(res)
                 if len(results) % 200 == 0:
                     save_results(results, CSV_OUTPUT)  # checkpoint
