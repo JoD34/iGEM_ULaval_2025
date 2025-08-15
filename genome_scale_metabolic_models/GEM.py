@@ -38,6 +38,10 @@ ION_BUFFERS = {
     "CO2":  ("EX_co2_e",  np.linspace(-5, 0, 11)),
     "Fe":   ("EX_fe2_e",  np.linspace(-1000, -1, 10))
 }
+
+CARBON_UPTAKES = [-2.0, -5.0, -10.0, -20.0]   # mmol/gDW/h (borne inférieure des EX_*)
+O2_LBS = [-20.0, -10.0, -5.0, -1.0, 0.0]
+
 TEMP_LEVELS = [
 #    (0.7, "faible (~30 °C)"),
     (0.9, "légère (~34 °C)"),
@@ -67,7 +71,9 @@ def flatten_ion_buffers(buffers: dict) -> list:
 
 def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
                         ion_params: list, temp_levels: list,
-                        growth_fracs: list, kos: list):
+                        growth_fracs: list, kos: list,
+                        carbon_uptakes: list, o2_lbs: list):
+    # NOTE: l'ordre ici DOIT matcher l'unpacking dans run_simulation(...)
     return product(
         models.items(),
         carb_sources.items(),
@@ -75,38 +81,51 @@ def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
         ion_params,
         temp_levels,
         growth_fracs,
-        kos
+        kos,
+        carbon_uptakes,
+        o2_lbs
     )
 
-
 def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
-                    temp_fact, ko, bio_rxn, WT, frac):
-    # Désactive toutes les sources de carbone
+                    temp_fact, ko, bio_rxn, WT, frac,
+                    *, carbon_uptake=-10.0, o2_lb=None):
+    # 1) Désactive toutes les sources de carbone
     for exch in CARBON_SOURCES.values():
         if exch in m.reactions:
             m.reactions.get_by_id(exch).lower_bound = 0.0
-    # Active la source sélectionnée
+
+    # 2) Active la source sélectionnée avec le débit demandé
     if c_exch in m.reactions:
-        m.reactions.get_by_id(c_exch).lower_bound = -10.0
-    # pH
+        m.reactions.get_by_id(c_exch).lower_bound = float(carbon_uptake)
+
+    # 3) pH (via H+)
     if "EX_h_e" in m.reactions:
         m.reactions.EX_h_e.lower_bound = ph_lb
-    # tampon ionique
+
+    # 4) Tampon ionique / nutriments
     if rxn_id in m.reactions:
         m.reactions.get_by_id(rxn_id).lower_bound = buf_lb
-    # température
+
+    # 5) O2 (limitation / anaérobie)
+    if o2_lb is not None and "EX_o2_e" in m.reactions:
+        m.reactions.EX_o2_e.lower_bound = float(o2_lb)
+
+    # 6) Température (borne sup. des réactions sensibles)
     for rid in TEMP_SENSITIVE:
         if rid in m.reactions:
             rx = m.reactions.get_by_id(rid)
-            ub0 = rx.upper_bound if abs(rx.upper_bound) < 1e5 else 1000
+            ub0 = rx.upper_bound if abs(rx.upper_bound) < 1e5 else 1000.0
             rx.upper_bound = ub0 * temp_fact
-    # knock-out
+
+    # 7) Knock-out
     if ko and ko in m.reactions:
         m.reactions.get_by_id(ko).knock_out()
- # croissance minimale (si besoin)
+
+    # 8) Contrainte de croissance minimale (si besoin)
     if WT and bio_rxn:
         lb_min = max(0.0, WT * float(frac))
         m.reactions.get_by_id(bio_rxn).lower_bound = lb_min
+
 
 def optimize_citrate(m, bio_rxn):
     if "EX_cit_e" not in m.reactions:
@@ -187,7 +206,7 @@ def run_simulation(params) -> dict:
     import numpy as np
 
     (model_name, path), (c_name, c_exch), (ph_lb, ph_lbl), \
-        (ion, rxn_id, buf_lb), (temp_fact, temp_lbl), frac, ko = params
+        (ion, rxn_id, buf_lb), (temp_fact, temp_lbl), frac, ko, carbon_uptake, o2_lb = params
 
     def nan_tuple(n=1):
         return tuple(np.nan for _ in range(n))
@@ -199,23 +218,28 @@ def run_simulation(params) -> dict:
     bio_rxn = next((r.id for r in base.reactions if "biomass" in r.id.lower()), None)
 
     # ---- WT growth dans l’environnement (sans KO, sans contrainte frac) ----
+    # --- WT growth (sans KO, sans contrainte frac) ---
     m_wt = base.copy()
     _ensure_minimal_medium(m_wt)
     if "EX_cit_e" in m_wt.reactions:
         m_wt.reactions.EX_cit_e.lower_bound = -1000.0
-    configure_model(m_wt, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, None, bio_rxn, WT=None, frac=0.0)
+    configure_model(
+        m_wt, c_exch, ph_lb, rxn_id, buf_lb, temp_fact,
+        ko=None, bio_rxn=bio_rxn, WT=None, frac=0.0,
+        carbon_uptake=carbon_uptake, o2_lb=o2_lb
+    )
     WT_growth = optimize_growth(m_wt, bio_rxn) if bio_rxn else np.nan
 
-    # NOTE: NE PAS filtrer sur WT_growth <= 0 — on garde la combinaison quand même.
-    WT_safe = float(WT_growth) if WT_growth is not None and np.isfinite(WT_growth) and WT_growth > 0 else 0.0
-
-    # ---- Modèle final avec KO + contrainte de fraction ----
+    # --- Modèle final (avec KO + contrainte de fraction) ---
     m = base.copy()
     _ensure_minimal_medium(m)
     if "EX_cit_e" in m.reactions:
         m.reactions.EX_cit_e.lower_bound = -1000.0
-    configure_model(m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact, ko, bio_rxn, WT=WT_safe, frac=frac)
-
+    configure_model(
+        m, c_exch, ph_lb, rxn_id, buf_lb, temp_fact,
+        ko=ko, bio_rxn=bio_rxn, WT=WT_safe, frac=frac,
+        carbon_uptake=carbon_uptake, o2_lb=o2_lb
+    )
     # Growth max
     growth_max = optimize_growth(m.copy(), bio_rxn) if bio_rxn else np.nan
     if growth_max is None:
@@ -250,6 +274,10 @@ def run_simulation(params) -> dict:
 
         'siderophore_FBA': sid_fba,
         'siderophore_pFBA': sid_pfb,
+        'o2_lb': float(o2_lb),
+        'carbon_uptake': float(carbon_uptake),
+
+
     }
 
 def save_results(results: list, output: Path, write_header: bool):
@@ -288,7 +316,9 @@ def main():
         ion_params,
         TEMP_LEVELS,
         GROWTH_FRACS,
-        KOS
+        KOS,
+        CARBON_UPTAKES,
+        O2_LBS
     )
 
     # 2bis) Bannière de debug
@@ -305,7 +335,9 @@ def main():
         len(ion_params) *
         len(TEMP_LEVELS) *
         len(GROWTH_FRACS) *
-        len(KOS)
+        len(KOS) *
+        len(CARBON_UPTAKES)
+        len(O2_LBS)
     )
 
     print("=" * 100)
@@ -322,6 +354,8 @@ def main():
     print(f"KOs: {KOS}")
     print("Expected combinations:", total_expected)
     print("=" * 100)
+    print(f"O2 LBs: {O2_LBS}")
+    print(f"CARBON_UPTAKES: {CARBON_UPTAKES}")
 
     # 3) Écriture CSV en append (header une seule fois)
     if CSV_OUTPUT.exists():

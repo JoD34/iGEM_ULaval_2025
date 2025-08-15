@@ -6,16 +6,17 @@ import numpy as np
 
 # Colonnes à afficher (si présentes dans le CSV)
 DISPLAY_COLS = [
-    "model","KO","carbon","pH_lb","pH_label",
-    "ion","ion_exch","temp_factor","temp_label","growth_frac",
+    "model","KO","carbon","carbon_uptake","o2_lb",
+    "pH_lb","pH_label","ion","ion_exch",
+    "temp_factor","temp_label","growth_frac",
     "WT_growth","growth_max","citrate_FBA",
     "growth_at_citrate","siderophore_FBA"
 ]
 
 NUMERIC_COLS = [
     "pH_lb","temp_factor","growth_frac","WT_growth","growth_max",
-    "citrate_FBA","growth_at_citrate",
-    "siderophore_FBA"
+    "citrate_FBA","growth_at_citrate","siderophore_FBA",
+    "o2_lb","carbon_uptake"
 ]
 
 SECTIONS = [
@@ -35,7 +36,6 @@ def top_n(df: pd.DataFrame, metric: str, n: int = 10) -> pd.DataFrame:
         return pd.DataFrame()
     sub = df.copy()
     sub = coerce_numeric(sub)
-    # garder seulement lignes avec une valeur de metric
     sub = sub[~sub[metric].isna()]
     if sub.empty:
         return sub
@@ -58,6 +58,23 @@ def print_section(title: str, table: pd.DataFrame):
     print(table[cols].to_string(index=False))
     print()
 
+def env_best_summary(df: pd.DataFrame, metric: str, top_k: int = 10):
+    """Affiche les meilleurs cas par (carbon, o2_lb, carbon_uptake) pour une métrique donnée."""
+    needed = {"carbon", "o2_lb", "carbon_uptake", metric}
+    if not needed.issubset(df.columns):
+        return
+    sub = coerce_numeric(df[list(needed | set(DISPLAY_COLS))].copy())
+    sub = sub.dropna(subset=[metric])
+    if sub.empty:
+        return
+    # on garde, pour chaque trio (C, O2, uptake), la ligne avec le metric max
+    idx = sub.groupby(["carbon", "o2_lb", "carbon_uptake"])[metric].idxmax()
+    best = sub.loc[idx]
+    best = best.sort_values([metric, "carbon", "o2_lb", "carbon_uptake"], ascending=[False, True, True, True]).head(top_k)
+
+    title = f"Meilleurs {metric} par (carbon, o2_lb, carbon_uptake) — Top {top_k}"
+    print_section(title, best)
+
 def main():
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <results.csv> [N_top]")
@@ -78,9 +95,14 @@ def main():
 
     df = pd.read_csv(csv_path)
 
+    # Sections classiques (Top N globaux)
     for metric, title in SECTIONS:
         t = top_n(df, metric, n=N)
         print_section(title, t)
+
+    # Résumés par environnement (si colonnes présentes)
+    env_best_summary(df, "citrate_FBA", top_k=N)
+    env_best_summary(df, "siderophore_FBA", top_k=N)
 
 if __name__ == "__main__":
     main()
