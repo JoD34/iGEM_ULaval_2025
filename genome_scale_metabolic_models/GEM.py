@@ -21,41 +21,39 @@ PH_LEVELS = [
 #    (-20, "extrême acide"),
     (-10, "acide pH~5"),
     (-1, "neutre pH~7"),
-    (0, "basique pH~9")
+    (0, "basique pH~9"),
 #    (5, "très basique")
 ]
 CARBON_SOURCES = {
-    "glucose": "EX_glc__D_e",
-    "acetate": "EX_ac_e",
-    "glycerol": "EX_glyc_e",
+    "glucose": "EX_glc__D_e"
+#    "acetate": "EX_ac_e"
+#    "glycerol": "EX_glyc_e"
 #    "succinate": "EX_succ_e",
 #    "ethanol": "EX_etoh_e",
 }
 ION_BUFFERS = {
     "HCO3": ("EX_hco3_e", np.linspace(-20, 0, 9)),
-#    "Pi":   ("EX_pi_e",   np.linspace(-20, 0, 9)),
-#    "NH4":  ("EX_nh4_e",  np.linspace(-20, 0, 9)),
-#    "CO2":  ("EX_co2_e",  np.linspace(-5, 0, 11)),
-    "Fe":   ("EX_fe2_e",  np.linspace(-1000, -1, 10)),
+    "Pi":   ("EX_pi_e",   np.linspace(-20, 0, 9)),
+    "NH4":  ("EX_nh4_e",  np.linspace(-20, 0, 9)),
+    "CO2":  ("EX_co2_e",  np.linspace(-5, 0, 11)),
+    "Fe":   ("EX_fe2_e",  np.linspace(-1000, -1, 10))
 }
 TEMP_LEVELS = [
 #    (0.7, "faible (~30 °C)"),
     (0.9, "légère (~34 °C)"),
     (1.0, "standard (~37 °C)"),
-    (1.1, "modérée (~40 °C)"),
-    (1.3, "élevée (~45 °C)")
+    (1.1, "modérée (~40 °C)")
+#    (1.3, "élevée (~45 °C)")
 ]
 TEMP_SENSITIVE = ["ACONTa", "ACONTb", "ICDHyr", "SUCDi"]
 GROWTH_FRACS = [
     0.0,
-    #0.05,
+    0.05,
     0.1,
-    #0.2
+    0.2
 ]
-KOS = [
-    None,
-    "ICDHyr"
-]
+KOS = [None, "ICDHyr", "SUCDi", "AKGDH", "SUCOAS", "ACONTa", "ACONTb", "PPC", "PPCK"]
+
 CSV_OUTPUT = Path('citrate_growth_siderophore_scan.csv')
 
 # -- Fonctions utilitaires --
@@ -254,10 +252,10 @@ def run_simulation(params) -> dict:
         'siderophore_pFBA': sid_pfb,
     }
 
-def save_results(results: list, output: Path):
+def save_results(results: list, output: Path, write_header: bool):
     df = pd.DataFrame(results)
-    df.to_csv(output, index=False)
-    print(f"Scénarios simulés : {len(df)}\n")
+    df.to_csv(output, index=False, mode='a', header=write_header)
+    print(f"Appending {len(df)} rows -> {output}")
     print("Top 5 prolifération (growth_max):")
     print(df.nlargest(5, 'growth_max'), "\n")
     print("Top 10 export citrate (citrate_FBA):")
@@ -265,43 +263,92 @@ def save_results(results: list, output: Path):
     print("Top 5 production de sidérophore (FBA):")
     print(df.nlargest(5, 'siderophore_FBA'), "\n")
 
-
 def main():
-    # Step 1: Assert models présents
-    models_loc = Path('models')
-    models_loc.mkdir(exist_ok=True)
+    import os, hashlib
+    from datetime import datetime
 
+    # 1) Préparer le dossier des modèles
+    models_loc = Path('models')
+    models_loc.mkdir(parents=True, exist_ok=True)
+
+    # Si vide, on télécharge les modèles (BiGG)
     if models_loc.is_dir() and not any(models_loc.iterdir()):
-        # Si vide, on fetch tous les modèles depuis BIGG
         url = "http://bigg.ucsd.edu/api/v2/models"
         fetch_models_based_on_org(url=url, outdir=str(models_loc), organisms=["coli"])
-    models = {m.stem: m for m in models_loc.iterdir()}
 
-    # Step 2: Prépare le plan d'expériences
+    # Charger la liste des modèles (fichiers .json)
+    models = {m.stem: m for m in models_loc.iterdir() if m.is_file()}
+
+    # 2) Construire le plan d'expériences
     ion_params = flatten_ion_buffers(ION_BUFFERS)
-    param_iter = generate_param_grid(models,
-                                     CARBON_SOURCES,
-                                     PH_LEVELS,
-                                     ion_params,
-                                     TEMP_LEVELS,
-                                     GROWTH_FRACS,
-                                     KOS)
+    param_iter = generate_param_grid(
+        models,
+        CARBON_SOURCES,
+        PH_LEVELS,
+        ion_params,
+        TEMP_LEVELS,
+        GROWTH_FRACS,
+        KOS
+    )
 
-    # Step 3: Exécution parallèle des simulations
-    n_procs = 10 # Exploration parallèle avec 10 processus
+    # 2bis) Bannière de debug
+    here = Path(__file__).resolve()
+    try:
+        script_sha1 = hashlib.sha1(here.read_bytes()).hexdigest()[:12]
+    except Exception:
+        script_sha1 = "n/a"
+
+    total_expected = (
+        len(models) *
+        len(CARBON_SOURCES) *
+        len(PH_LEVELS) *
+        len(ion_params) *
+        len(TEMP_LEVELS) *
+        len(GROWTH_FRACS) *
+        len(KOS)
+    )
+
+    print("=" * 100)
+    print("RUN BANNER @", datetime.now().isoformat())
+    print("CWD:", os.getcwd())
+    print("Script:", str(here))
+    print("Script SHA1:", script_sha1)
+    print(f"Models: {sorted(models.keys())}")
+    print(f"CARBON_SOURCES: {list(CARBON_SOURCES.keys())}")
+    print(f"PH labels: {[lbl for _, lbl in PH_LEVELS]}")
+    print(f"IONS: {sorted(set([ion for (ion, _, _) in ion_params]))}")
+    print(f"TEMP labels: {[lbl for _, lbl in TEMP_LEVELS]}")
+    print(f"GROWTH_FRACS: {GROWTH_FRACS}")
+    print(f"KOs: {KOS}")
+    print("Expected combinations:", total_expected)
+    print("=" * 100)
+
+    # 3) Écriture CSV en append (header une seule fois)
+    if CSV_OUTPUT.exists():
+        CSV_OUTPUT.unlink()
+    CSV_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    write_header = True
+
+    flush_every = 200  # <-- défini ici
+    n_procs = 10
     ctx = get_context("spawn")
+    chunk = []
 
     with ctx.Pool(processes=n_procs, initializer=_init_worker, initargs=(models,)) as pool:
-        results = []
         for res in pool.imap_unordered(run_simulation_wrapper, param_iter, chunksize=10):
-            if res is not None:
-                results.append(res)
-                if len(results) % 200 == 0:
-                    save_results(results, CSV_OUTPUT)  # checkpoint
-                    results = []
-    # à la fin, sauve le reste
-    if results:
-        save_results(results, CSV_OUTPUT)
+            if res is None:
+                continue
+            chunk.append(res)
+            if len(chunk) >= flush_every:
+                save_results(chunk, CSV_OUTPUT, write_header)  # append + header si write_header=True
+                write_header = False
+                chunk = []
+
+    # Flush final
+    if chunk:
+        save_results(chunk, CSV_OUTPUT, write_header)
+
+    print(f"Terminé. Résultats agrégés dans: {CSV_OUTPUT.resolve()}")
 
 
 if __name__ == '__main__':
