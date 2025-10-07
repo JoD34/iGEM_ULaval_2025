@@ -58,6 +58,29 @@ KOS = [None, "ICDHyr", "SUCDi", "AKGDH", "SUCOAS", "ACONTa", "ACONTb", "PPC", "P
 CSV_OUTPUT = Path('citrate_growth_siderophore_scan.csv')
 
 def flatten_ion_buffers(buffers: dict) -> list:
+       """
+    Expand ion-buffer configuration into a flat list of tuples.
+
+    Purpose
+    -------
+    Converts a dict like {"Pi": ("EX_pi_e", np.linspace(...)), ...}
+    into a list of (ion_label, exchange_rxn_id, lower_bound_value) tuples,
+    one entry per bound value, suitable for cartesian product sweeps.
+
+    Parameters
+    ----------
+    buffers : dict
+        Mapping from ion label (str) to a tuple:
+        (exchange_reaction_id : str, iterable_of_lower_bounds : iterable[float])
+
+    Returns
+    -------
+    list[tuple[str, str, float]]
+        Flat list of (ion_label, exchange_rxn_id, lower_bound_value).
+    """
+python
+Copier le code
+
     return [
         (ion, rxn_id, buf_lb)
         for ion, (rxn_id, buf_list) in buffers.items()
@@ -69,6 +92,41 @@ def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
                         ion_params: list, temp_levels: list,
                         growth_fracs: list, kos: list,
                         carbon_uptakes: list, o2_lbs: list):
+                            """
+    Build a cartesian product iterator over all simulation parameters.
+
+    Purpose
+    -------
+    Produces the full combination space of model file entries, media
+    composition, physicochemical proxies, genetic perturbations, and
+    objective-gating parameters for batch simulation.
+
+    Parameters
+    ----------
+    models : dict
+        Mapping {model_name: PathLike} of model files to evaluate.
+    carb_sources : dict
+        Mapping {carbon_label: exchange_reaction_id}.
+    ph_levels : list[tuple[float, str]]
+        [(EX_h_e_lower_bound, human_label), ...] (more negative = more acidic).
+    ion_params : list[tuple[str, str, float]]
+        Output of `flatten_ion_buffers`: (ion_label, exchange_rxn_id, lower_bound).
+    temp_levels : list[tuple[float, str]]
+        [(upper_bound_scale_factor, human_label), ...] temperature proxies.
+    growth_fracs : list[float]
+        Minimum biomass fraction of WT to enforce (0.0 = none).
+    kos : list[Optional[str]]
+        Reaction IDs to knock out; None means no KO.
+    carbon_uptakes : list[float]
+        Carbon source uptake lower bounds (mmol·gDW^-1·h^-1, negative for uptake).
+    o2_lbs : list[float]
+        Oxygen exchange lower bounds (negative uptake → aerobic; 0 → closed).
+
+    Returns
+    -------
+    itertools.product
+        Iterator over tuples in the exact order expected by `run_simulation`.
+    """
     return product(
         models.items(),
         carb_sources.items(),
@@ -339,4 +397,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
