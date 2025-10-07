@@ -27,7 +27,6 @@ def fetch_models_based_on_org(url:str, outdir:Optional[Path]=None, organisms:Opt
         print("No models found in the response.")
         return
 
-    # Filter for specific organisms if any
     selected_models = [m for m in models if any(org.lower() in m["organism"].lower() for org in organisms)] if organisms else models
     
     if not selected_models:
@@ -120,5 +119,4 @@ def make_request(url:str) -> Optional[requests.Response]:
     
 if __name__=='__main__':
     url = "http://bigg.ucsd.edu/api/v2/models"
-    #get_organisms_choice(url=url, organisms = ['Escherichia coli'], simplified=False)
     fetch_models_based_on_org(url=url, outdir='models', organisms=['Escherichia coli'])
