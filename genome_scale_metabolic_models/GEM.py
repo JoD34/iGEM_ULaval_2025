@@ -78,9 +78,6 @@ def flatten_ion_buffers(buffers: dict) -> list:
     list[tuple[str, str, float]]
         Flat list of (ion_label, exchange_rxn_id, lower_bound_value).
     """
-python
-Copier le code
-
     return [
         (ion, rxn_id, buf_lb)
         for ion, (rxn_id, buf_list) in buffers.items()
@@ -638,6 +635,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
