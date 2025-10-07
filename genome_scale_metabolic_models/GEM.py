@@ -587,7 +587,7 @@ def main():
         len(TEMP_LEVELS) *
         len(GROWTH_FRACS) *
         len(KOS) *
-        len(CARBON_UPTAKES)
+        len(CARBON_UPTAKES) *
         len(O2_LBS)
     )
 
@@ -635,6 +635,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
