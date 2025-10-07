@@ -40,11 +40,11 @@ CARBON_UPTAKES = [-2.0, -5.0, -10.0, -20.0]
 O2_LBS = [-20.0, -10.0, -5.0, -1.0, 0.0]
 
 TEMP_LEVELS = [
-    (0.7, "faible (~30 °C)"),
-    (0.9, "légère (~34 °C)"),
+    (0.7, "low (~30 °C)"),
+    (0.9, "light (~34 °C)"),
     (1.0, "standard (~37 °C)"),
-    (1.1, "modérée (~40 °C)"),
-    (1.3, "élevée (~45 °C)")
+    (1.1, "moderate (~40 °C)"),
+    (1.3, "high (~45 °C)")
 ]
 TEMP_SENSITIVE = ["ACONTa", "ACONTb", "ICDHyr", "SUCDi"]
 GROWTH_FRACS = [
@@ -522,11 +522,11 @@ def save_results(results: list, output: Path, write_header: bool):
     df = pd.DataFrame(results)
     df.to_csv(output, index=False, mode='a', header=write_header)
     print(f"Appending {len(df)} rows -> {output}")
-    print("Top 5 prolifération (growth_max):")
+    print("Top 5 proliferation (growth_max):")
     print(df.nlargest(5, 'growth_max'), "\n")
-    print("Top 10 export citrate (citrate_FBA):")
+    print("Top 10 citrate export (citrate_FBA):")
     print(df.nlargest(10, 'citrate_FBA'), "\n")
-    print("Top 5 production de sidérophore (FBA):")
+    print("Top 5 production of siderophore (FBA):")
     print(df.nlargest(5, 'siderophore_FBA'), "\n")
 
 def main():
@@ -630,11 +630,12 @@ def main():
     if chunk:
         save_results(chunk, CSV_OUTPUT, write_header)
 
-    print(f"Terminé. Résultats agrégés dans: {CSV_OUTPUT.resolve()}")
+    print(f"Completed. Aggregated results in: {CSV_OUTPUT.resolve()}")
 
 
 if __name__ == '__main__':
     main()
+
 
 
 
