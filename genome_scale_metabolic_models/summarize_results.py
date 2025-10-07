@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
 import sys
 from pathlib import Path
 import pandas as pd
 import numpy as np
 
-# Colonnes à afficher (si présentes dans le CSV)
 DISPLAY_COLS = [
     "model","KO","carbon","carbon_uptake","o2_lb",
     "pH_lb","pH_label","ion","ion_exch",
@@ -39,7 +37,6 @@ def top_n(df: pd.DataFrame, metric: str, n: int = 10) -> pd.DataFrame:
     sub = sub[~sub[metric].isna()]
     if sub.empty:
         return sub
-    # tri principal: metric desc; secondaires utiles si dispo
     sort_cols = [metric]
     ascending = [False]
     if "WT_growth" in sub.columns:
@@ -67,7 +64,6 @@ def env_best_summary(df: pd.DataFrame, metric: str, top_k: int = 10):
     sub = sub.dropna(subset=[metric])
     if sub.empty:
         return
-    # on garde, pour chaque trio (C, O2, uptake), la ligne avec le metric max
     idx = sub.groupby(["carbon", "o2_lb", "carbon_uptake"])[metric].idxmax()
     best = sub.loc[idx]
     best = best.sort_values([metric, "carbon", "o2_lb", "carbon_uptake"], ascending=[False, True, True, True]).head(top_k)
@@ -95,12 +91,10 @@ def main():
 
     df = pd.read_csv(csv_path)
 
-    # Sections classiques (Top N globaux)
     for metric, title in SECTIONS:
         t = top_n(df, metric, n=N)
         print_section(title, t)
 
-    # Résumés par environnement (si colonnes présentes)
     env_best_summary(df, "citrate_FBA", top_k=N)
     env_best_summary(df, "siderophore_FBA", top_k=N)
 
