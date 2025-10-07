@@ -58,7 +58,7 @@ KOS = [None, "ICDHyr", "SUCDi", "AKGDH", "SUCOAS", "ACONTa", "ACONTb", "PPC", "P
 CSV_OUTPUT = Path('citrate_growth_siderophore_scan.csv')
 
 def flatten_ion_buffers(buffers: dict) -> list:
-       """
+    """
     Expand ion-buffer configuration into a flat list of tuples.
 
     Purpose
@@ -92,7 +92,7 @@ def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
                         ion_params: list, temp_levels: list,
                         growth_fracs: list, kos: list,
                         carbon_uptakes: list, o2_lbs: list):
-                            """
+    """
     Build a cartesian product iterator over all simulation parameters.
 
     Purpose
@@ -142,6 +142,51 @@ def generate_param_grid(models: dict, carb_sources: dict, ph_levels: list,
 def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
                     temp_fact, ko, bio_rxn, WT, frac,
                     *, carbon_uptake=-10.0, o2_lb=None):
+    """
+    Apply environment, physicochemical proxies, and genetic edits to a model.
+
+    Purpose
+    -------
+    Configures a COBRA model copy before optimization by:
+    1) closing all carbon exchanges, then opening the selected carbon source;
+    2) setting pH proxy via `EX_h_e` lower bound;
+    3) setting an ion/buffer exchange lower bound;
+    4) constraining O2 lower bound (aerobic → anoxic);
+    5) scaling UBs of temperature-sensitive reactions by `temp_fact`;
+    6) applying a reaction KO if requested;
+    7) enforcing a minimum biomass flux as a fraction of WT, if provided.
+
+    Parameters
+    ----------
+    m : cobra.Model
+        Model to modify in place.
+    c_exch : str
+        Carbon source exchange reaction ID to enable.
+    ph_lb : float
+        Lower bound for `EX_h_e` (more negative = more acidic).
+    rxn_id : str
+        Exchange reaction ID for the selected ion/buffer.
+    buf_lb : float
+        Lower bound for `rxn_id` (COBRA: negative allows uptake).
+    temp_fact : float
+        Upper-bound scaling factor for reactions in `TEMP_SENSITIVE`.
+    ko : Optional[str]
+        Reaction ID to knock out; None = no KO.
+    bio_rxn : Optional[str]
+        Biomass reaction ID (used only if `WT` and `frac` are provided).
+    WT : Optional[float]
+        Wild-type max growth rate (h^-1) for the same environment.
+    frac : float
+        Fraction of WT growth to enforce as a biomass lower bound (0–1).
+    carbon_uptake : float, keyword-only
+        Lower bound for the chosen carbon exchange (mmol·gDW^-1·h^-1).
+    o2_lb : Optional[float], keyword-only
+        Lower bound for `EX_o2_e`.
+
+    Returns
+    -------
+    None
+    """
     for exch in CARBON_SOURCES.values():
         if exch in m.reactions:
             m.reactions.get_by_id(exch).lower_bound = 0.0
@@ -173,6 +218,27 @@ def configure_model(m, c_exch, ph_lb, rxn_id, buf_lb,
 
 
 def optimize_citrate(m, bio_rxn):
+    """
+    Maximize citrate export and report the optimal citrate flux and biomass rate.
+
+    Purpose
+    -------
+    Sets the model objective to `EX_cit_e`, performs FBA, and returns:
+      (citrate_flux, pFBA_flux_placeholder, biomass_flux_at_citrate_optimum).
+
+    Parameters
+    ----------
+    m : cobra.Model
+        Configured model (environment + KO already applied).
+    bio_rxn : Optional[str]
+        Biomass reaction ID to read the biomass flux at the citrate optimum.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        (citrate_FBA, citrate_pFBA_placeholder, growth_at_citrate)
+        NaN triplet if the optimization is infeasible or `EX_cit_e` is absent.
+    """
     if "EX_cit_e" not in m.reactions:
         return (np.nan, np.nan, np.nan)
     m.objective = "EX_cit_e"
@@ -189,6 +255,30 @@ def optimize_citrate(m, bio_rxn):
     return sol.fluxes["EX_cit_e"], np.nan, gr
 
 def optimize_growth(m, bio_rxn) -> float:
+     """
+    Maximize biomass growth rate.
+
+    Purpose
+    -------
+    Sets the objective to `bio_rxn` and runs FBA.
+
+    Parameters
+    ----------
+    m : cobra.Model
+        Configured model.
+    bio_rxn : str
+        Biomass reaction ID.
+
+    Returns
+    -------
+    float or None
+        Optimal growth rate (h^-1), or None if the problem is infeasible.
+
+    Raises
+    ------
+    KeyError
+        If `bio_rxn` does not exist in `m.reactions` (not caught here).
+    """
     m.objective = bio_rxn
     sol = m.optimize()
     if sol.status != "optimal":
@@ -197,6 +287,24 @@ def optimize_growth(m, bio_rxn) -> float:
 
 
 def optimize_siderophore(m):
+    """
+    Maximize siderophore secretion proxy (enterobactin exchange).
+
+    Purpose
+    -------
+    Sets the objective to `EX_feenter_e` and performs FBA.
+
+    Parameters
+    ----------
+    m : cobra.Model
+        Configured model.
+
+    Returns
+    -------
+    tuple[float, float]
+        (siderophore_FBA, siderophore_pFBA_placeholder)
+        NaNs if infeasible or the exchange reaction is absent.
+    """
     sider_id = "EX_feenter_e"
     if sider_id not in m.reactions:
         return np.nan, np.nan
@@ -207,10 +315,46 @@ def optimize_siderophore(m):
     return sol.fluxes[sider_id], np.nan
 
 def run_simulation_wrapper(params):
+    """
+    Wrapper for parallel workers to limit internal thread fan-out.
+
+    Purpose
+    -------
+    Ensures that each multiprocessing worker runs with restricted BLAS/OpenMP
+    threads to avoid oversubscription on multi-core systems, then delegates to
+    `run_simulation`.
+
+    Parameters
+    ----------
+    params : tuple
+        A single parameter tuple as produced by `generate_param_grid`.
+
+    Returns
+    -------
+    dict
+        One result row.
+    """
     with threadpool_limits(limits=1):
         return run_simulation(params)
 
 def _ensure_minimal_medium(m):
+    """
+    Enable a minimal medium to prevent infeasible models due to missing nutrients.
+
+    Purpose
+    -------
+    Sets conservative uptake lower bounds for standard nutrients:
+    O2, NH4+, Pi, SO4, H2O, and H+ (protons).
+
+    Parameters
+    ----------
+    m : cobra.Model
+        Model to modify in place.
+
+    Returns
+    -------
+    None
+    """
     needed = [
         ("EX_o2_e",  -20.0),
         ("EX_nh4_e", -10.0),
@@ -224,12 +368,69 @@ def _ensure_minimal_medium(m):
             m.reactions.get_by_id(rid).lower_bound = lb
 
 def _init_worker(models_paths):
+    """
+    Worker initializer to load models once per process.
+
+    Purpose
+    -------
+    Populates the global MODELS cache with {model_name: cobra.Model} by reading
+    JSON model files (e.g., BiGG) from `models_paths`. This minimizes I/O
+    overhead during parallel evaluation.
+
+    Parameters
+    ----------
+    models_paths : dict
+        Mapping {model_name: pathlib.Path} to JSON model files.
+
+    Returns
+    -------
+    None
+    """
     import cobra
     global MODELS
     MODELS = {name: cobra.io.load_json_model(str(p)) for name, p in models_paths.items()}
 
 
 def run_simulation(params) -> dict:
+    """
+    Execute a single parameterized simulation and return a result row.
+
+    Purpose
+    -------
+    Given a parameter tuple (model, carbon source, pH, ion buffer, temperature,
+    growth fraction, KO, carbon uptake, O2 LB), this function:
+      1) computes WT growth in the same environment (no KO, no growth fraction);
+      2) configures a second model with KO and optional minimum growth;
+      3) optimizes growth, citrate export (and reads biomass at that optimum),
+         and siderophore export;
+      4) returns a structured dict of metrics and the parameter annotations.
+
+    Parameters
+    ----------
+    params : tuple
+        ((model_name, model_path),
+         (carbon_label, carbon_exch_id),
+         (ph_lb, ph_label),
+         (ion_label, ion_exch_id, ion_lb),
+         (temp_factor, temp_label),
+         growth_fraction,
+         ko_reaction_id_or_None,
+         carbon_uptake_lb,
+         o2_lower_bound)
+
+    Returns
+    -------
+    dict
+        Result row with fields:
+        {
+          'model', 'KO', 'carbon', 'carbon_exch', 'pH_lb', 'pH_label',
+          'ion', 'ion_exch', 'temp_factor', 'temp_label', 'growth_frac',
+          'WT_growth', 'growth_max',
+          'citrate_FBA', 'citrate_pFBA', 'growth_at_citrate',
+          'siderophore_FBA', 'siderophore_pFBA',
+          'o2_lb', 'carbon_uptake'
+        }
+    """
     import numpy as np
 
     (model_name, path), (c_name, c_exch), (ph_lb, ph_lbl), \
@@ -299,6 +500,28 @@ def run_simulation(params) -> dict:
     }
 
 def save_results(results: list, output: Path, write_header: bool):
+    """
+    Append a batch of result dicts to CSV and print quick rankings.
+
+    Purpose
+    -------
+    Converts a list of per-condition dicts into a DataFrame, appends them to
+    `output` (creating header if requested), and prints top-k summaries for
+    sanity checking during long runs.
+
+    Parameters
+    ----------
+    results : list[dict]
+        Batch of result rows as returned by `run_simulation`.
+    output : pathlib.Path
+        Destination CSV path.
+    write_header : bool
+        If True, write the CSV header; afterwards use False to append.
+
+    Returns
+    -------
+    None
+    """
     df = pd.DataFrame(results)
     df.to_csv(output, index=False, mode='a', header=write_header)
     print(f"Appending {len(df)} rows -> {output}")
@@ -310,6 +533,24 @@ def save_results(results: list, output: Path, write_header: bool):
     print(df.nlargest(5, 'siderophore_FBA'), "\n")
 
 def main():
+    """
+    Orchestrate model fetching, parameter grid construction, and parallel runs.
+
+    Steps
+    -----
+    1) Ensure `models/` exists. If empty, fetch BiGG models filtered by organism
+       (e.g., "coli") using `fetch_models_based_on_org`.
+    2) Build the parameter iterator (cartesian product of all factors).
+    3) Print a run banner with environment metadata and an SHA1 of this script.
+    4) Prepare the CSV (remove if exists) and set append mode with header-once.
+    5) Launch a multiprocessing pool with per-worker model initialization.
+    6) Consume results with unordered iteration, flush to CSV every N rows.
+    7) Final flush; print the absolute path of the aggregated CSV.
+
+    Returns
+    -------
+    None
+    """
     import os, hashlib
     from datetime import datetime
 
@@ -397,5 +638,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
